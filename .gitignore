@@ -1,0 +1,17 @@
+# Local secrets and environment files
+groq_key.txt
+*.log
+New folder/
+
+# Python cache and local envs
+.venv/
+__pycache__/
+*.py[cod]
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+
+# Optional local runtime data
+*.sqlite3
+*.db
