@@ -1,4 +1,4 @@
-﻿import threading
+import threading
 import time
 
 from concurrent.futures import ThreadPoolExecutor
@@ -81,9 +81,10 @@ class AtomApp(ctk.CTk):
 
                 audio = record_until_silence(
                     self.cancel_event,
-                    max_seconds=None,
                     on_status=self.set_status,
                     on_partial=partial_callback,
+                    # A follow-up only waits 4 seconds for you to start talking.
+                    wait_for_speech_seconds=4 if turn else 6,
                 )
                 if audio is None:
                     break
@@ -96,10 +97,15 @@ class AtomApp(ctk.CTk):
                     text_future = executor.submit(transcribe, to_wav_bytes(audio))
                     ok, score = voice_future.result()
                     heard = text_future.result()
-                if partial_text["value"] and (not heard or len(partial_text["value"]) > len(heard)):
+                # The full transcript is always more accurate than the live preview.
+                if not heard and partial_text["value"]:
                     heard = partial_text["value"]
                 if not ok:
-                    self.add("Locked", f"Voice not recognized (score {score:.2f})")
+                    # On the follow-up turn this is usually room noise or ATOM's own
+                    # voice, so end quietly instead of showing a lock message.
+                    if not turn:
+                        self.add("Locked", f"Voice not recognized (score {score:.2f})")
+                    print("Voice lock score", round(score, 2))
                     break
                 if not heard or heard.lower().strip(" .!?") in {"stop", "cancel", "never mind"}:
                     break
@@ -114,7 +120,7 @@ class AtomApp(ctk.CTk):
                 self.set_status("Speaking... press Cancel to stop")
                 speak(reply)
         except Exception as error:
-            print("ATOM error:", type(error).__name__)
+            print("ATOM error:", type(error).__name__, str(error)[:200])
             self.add("Error", "Something went wrong. Check your connection and try again.")
         finally:
             self.busy = False

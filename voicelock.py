@@ -1,12 +1,14 @@
-﻿import os
+import os
+from pathlib import Path
 
 import numpy as np
 import torch
 from speechbrain.inference.speaker import EncoderClassifier
 from speechbrain.utils.fetching import LocalStrategy
 
-MODEL_DIR = "models/ecapa"
-VOICE_FILE = "my_voice.npy"
+HERE = Path(__file__).resolve().parent
+MODEL_DIR = str(HERE / "models" / "ecapa")
+VOICE_FILE = str(HERE / "my_voice.npy")
 THRESHOLD = float(os.getenv("ATOM_VOICE_THRESHOLD", "0.20"))
 # Real voice matches were scoring around 0.20 to 0.35, so the older 0.40 cutoff
 # was too strict and rejected valid usage. Keep the default low and let the env
@@ -29,8 +31,16 @@ def embed(enc, audio):
     return e / np.linalg.norm(e)
 
 
+_MINE = None
+
+
 def voice_score(enc, audio):
-    mine = np.load(VOICE_FILE)
+    global _MINE
+    if _MINE is None:
+        if not Path(VOICE_FILE).exists():
+            raise RuntimeError("No voice profile yet. Run: python enroll.py")
+        _MINE = np.load(VOICE_FILE)
+    mine = _MINE
     return float(np.dot(embed(enc, audio), mine))
 
 

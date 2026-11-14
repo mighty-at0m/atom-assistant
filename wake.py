@@ -1,13 +1,15 @@
-import sounddevice as sd
+import os
 import time
+
+import sounddevice as sd
 from openwakeword.model import Model
 from openwakeword.utils import download_models
 
 RATE = 16000
 CHUNK = 1280      # 80 ms of audio per check
-# Your measured wake phrase reached 0.36 while background noise stayed below
-# 0.03. 0.30 gives it useful headroom without making false activations likely.
-THRESHOLD = 0.40
+# Measured "Hey Jarvis" scores were 0.36 to 0.79 with background noise under 0.03.
+# Override with ATOM_WAKE_THRESHOLD (lower = easier to trigger, more false wakes).
+THRESHOLD = float(os.getenv("ATOM_WAKE_THRESHOLD", "0.35"))
 
 
 def load_model():

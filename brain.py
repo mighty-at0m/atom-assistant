@@ -1,4 +1,4 @@
-﻿import shutil
+import shutil
 import subprocess
 
 OPENCLAW = shutil.which("openclaw.cmd") or shutil.which("openclaw")  # Windows needs the .cmd

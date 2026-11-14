@@ -15,3 +15,10 @@ Thumbs.db
 # Optional local runtime data
 *.sqlite3
 *.db
+
+# Personal data: never publish
+my_voice.npy
+memory.json
+
+# Downloaded models (SpeechBrain fetches these on first run)
+models/

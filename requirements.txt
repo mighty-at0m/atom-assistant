@@ -1,0 +1,13 @@
+groq
+numpy
+sounddevice
+customtkinter
+pyttsx3
+comtypes
+pywin32
+pillow
+openwakeword
+onnxruntime
+speechbrain
+torch
+torchaudio

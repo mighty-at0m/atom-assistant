@@ -1,6 +1,9 @@
-﻿import sys
+import os
+import sys
+HERE = os.path.dirname(os.path.abspath(sys.argv[0]))
+os.chdir(HERE)  # works from the desktop shortcut or any other folder
 if sys.stdout is None:  # pythonw has no console, so log to a file
-    sys.stdout = sys.stderr = open("atom.log", "a", buffering=1)
+    sys.stdout = sys.stderr = open(os.path.join(HERE, "atom.log"), "a", buffering=1, encoding="utf-8")
 import socket
 LOCK = socket.socket()
 try:
@@ -48,7 +51,7 @@ def wake_loop():
         app.set_status("Say 'Hey Jarvis' or click the mic")
         while True:
             score = wait_for_wake(model)
-            print("Heard Hey Jarvis, score", round(float(score), 2))
+            print(time.strftime("%H:%M:%S"), "Heard Hey Jarvis, score", round(float(score), 2))
             if app.busy:
                 print("Busy, ignoring")
             else:

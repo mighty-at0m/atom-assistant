@@ -5,18 +5,28 @@ Windows desktop voice assistant at `C:\Users\USER\atom-assistant`. Use `\.venv\S
 ## Status
 
 - Working before the current, untested changes: “Hey Jarvis” wake detection, speaker verification, Groq transcription, the CustomTkinter UI, Groq fast chat/tool calling, and Windows SAPI speech.
-- Wake threshold is `0.30`; the temporary `Wake peak` debug output was removed. A restart is required to load it.
+- Wake threshold is `0.35` (code previously said 0.40 while this file said 0.30); override with `ATOM_WAKE_THRESHOLD`.
 - Voice lock default threshold is now `0.20` and can be tuned with `ATOM_VOICE_THRESHOLD`; observed valid scores in the 0.20–0.35 range were being rejected by the older `0.40` cutoff.
 - Temporary latency testing override: set `ATOM_DISABLE_VOICELOCK=1` to skip the voice check while measuring reply latency or debugging the mic pipeline.
-- Long-form capture is now enabled with no fixed 5-second cap, and the app can show partial transcript text while speech is still being captured; live-mic validation is still pending.
+- Capture ends after 0.8 s of silence, with a 15 s hard cap. Live preview is opt-in (`ATOM_LIVE_PREVIEW=1`) because it spends Groq requests.
 - Unverified in a real run: adaptive silence-based recording, GUI Cancel/Stop, one follow-up turn, memory context, and new safe tool handlers.
 - Groq credentials are now resolved from `GROQ_API_KEY` before the local key file; no secret values are placed in UI or logs.
 - Offline validation passed: all changed Python files parse, `tools.py` imports, and all eight tool schemas load. No live microphone, TTS, or Groq request was made.
 - Voice lock is strict on every activation. Speaker verification and transcription run concurrently after recording, so Atom does not wait for them one after another.
 - The concurrent strict-lock pipeline passed a syntax check but is untested on the real microphone and Groq connection.
-- Wake listening now recovers from a stopped PortAudio stream instead of terminating the wake loop. End-of-speech delay is 0.65 seconds, with an eight-second capture cap.
+- Wake listening now recovers from a stopped PortAudio stream instead of terminating the wake loop.
 
 ## Changelog
+
+- 2026-11-14: v4 confirmed on the laptop: apps open (Spotify opened). v5: `play_music(query, app)` plays the first YouTube result automatically (scrapes videoId from the results page) or opens a search in the Spotify app (spotify:search URI; Spotify can't autoplay without Premium + Web API). `media_control` sends media keys (play/pause, next, previous).
+
+- 2026-11-14: Laptop still had the OLD open_application (Popen chrome.exe -> WinError 2), so fix 3 was only partly applied. Full overwrite bundle. `tools.py`: apps open via Start Menu shortcut search (any installed app by name), `request_action` for shutdown/restart/sleep/close_app/delete_file (Recycle Bin, user folder only) that waits in `PENDING` for 60 s. `fastbrain.py`: a spoken yes/no is matched in code (not by the model) to confirm or cancel; the tool log line now prints the result message. Spotify search via open.spotify.com.
+
+- 2026-11-14: Live test: model asked permission for every action, Chrome/Edge would not open, no browser tool. `fastbrain.py`: tools are pre-approved, never ask for confirmation. `tools.py`: apps launch through `cmd /c start` (finds chrome/msedge through App Paths), more app names and fuzzy matching, new `open_website(site, search)` tool using the default browser. `app.py`: a failed voice lock on the follow-up turn ends quietly (it is usually noise).
+
+- 2026-11-14: test_brain.py passed on the laptop (battery 10.1s, time 1.0s, notepad 0.8s, screenshot 2.4s) but refused "How do I open a bank account?". `fastbrain.py`: system prompt now tells the model to answer everyday questions. `tools.py`: battery reads GetSystemPowerStatus via ctypes (instant) instead of PowerShell, and says when plugged in.
+
+- 2026-11-14: Hark review fixes (branch hark-fixes). `groqclient.py` new shared lazy Groq client. `stt.py`: 15 s hard cap, 0.8 s end-of-speech, noise-floor calibration, gives up after 6 s of no speech, live preview off by default (`ATOM_LIVE_PREVIEW=1`). `app.py`: full transcript always wins over the preview, 4 s wait on follow-up. `fastbrain.py`: final no-tools round so tool results get spoken, strips gpt-oss reasoning field when resending, friendly rate-limit and offline replies. `tools.py`: folder/search limited to the user folder with a 4 s search cap, clipboard only when asked, added take_screenshot and set_volume back. `voicelock.py`/`atom.py`: paths relative to the project so the shortcut works from anywhere. `wake.py`: threshold 0.35, `ATOM_WAKE_THRESHOLD` override. `.gitignore`: my_voice.npy, memory.json, models/. Added README.md, requirements.txt, test_brain.py.
 
 - 2026-11-05: `voicelock.py` — lowered the default voice threshold from `0.40` to `0.20`, added `ATOM_VOICE_THRESHOLD` tuning, and added a temporary `ATOM_DISABLE_VOICELOCK` override for latency testing.
 - 2026-11-05: `stt.py`, `app.py` — removed the fixed 5-second recording rule, enabled long-form capture until silence, and added a partial live transcription preview while you are still speaking.
@@ -45,12 +55,15 @@ Windows desktop voice assistant at `C:\Users\USER\atom-assistant`. Use `\.venv\S
 - [x] Re-enroll the voice profile with more varied recordings to improve the saved voice embedding.
 - [ ] Measure first-turn latency and rejection scores after concurrent verification; tune the voice threshold only from those measurements.
 - [ ] Decide whether to adopt a true streaming voice provider for call-like response latency; Groq file transcription cannot start before end-of-speech.
-- [ ] Add `.gitignore` before any Git use.
+- [x] Add `.gitignore` (now also covers my_voice.npy, memory.json, models/).
+- [ ] Remove my_voice.npy and models/ from the public repo history (they were committed in 3765fe9).
+- [ ] Live test: TTS was silent during the 2026-11-14 run; check the speaker volume and output device.
+- [ ] Run `python test_brain.py` and a live mic test on the hark-fixes code.
 - [ ] Build a custom “Hey Atom” wake model later; do not rename the existing Jarvis model and claim it detects Atom.
 
 ## Rules
 
 - Add new PC actions as explicit functions and schemas in `tools.py`; never pass model text to an arbitrary shell.
-- Keep destructive/outward actions (delete, send, install, shutdown, restart, settings changes) unavailable until there is an explicit confirmation flow.
+- Risky actions go through `request_action` + `PENDING` and only run after a spoken yes matched in code. Sending messages and installing software stay unavailable.
 - Keep spoken replies short and plain: no markdown or emojis.
 - After every change, update this file’s Status, Changelog, and To do sections concisely.
