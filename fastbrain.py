@@ -11,7 +11,7 @@ YES = {"yes", "yeah", "yep", "yes please", "do it", "go ahead", "confirm", "conf
 NO = {"no", "nope", "cancel", "stop", "don't", "dont", "never mind", "no thanks"}
 
 MODEL = "openai/gpt-oss-20b"
-MAX_TOOL_ROUNDS = 2
+MAX_TOOL_ROUNDS = 8  # enough for look -> click -> look -> click tasks
 
 SYSTEM = """You are ATOM, a concise voice assistant on a Windows laptop.
 Reply in one to three short spoken sentences. Do not use markdown, lists, or emojis.
@@ -26,6 +26,10 @@ for permission or confirmation before opening apps, websites, folders, screensho
 For web searches or websites (YouTube, Netflix, Google), use open_website.
 To play music use play_music (one call only, don't also open the app or a website); for pause, skip or resume use media_control.
 Describe only what the tool results say happened.
+To work inside an app (click buttons, open playlists, use a website): open it if needed, then read_screen,
+then click by number, then read_screen again to check, and repeat until the job is done. Use press_keys for
+shortcuts and type_text for typing. Use look_at_screen only when read_screen doesn't show what you need.
+Don't narrate each step; after finishing, say in one short sentence what you did.
 If an app fails to open, offer to open its website instead.
 Shutting down, restarting, sleep, closing apps and deleting files go through request_action, which asks
 the user to say yes; speak its question exactly and never claim it is done before then.
@@ -46,7 +50,15 @@ def _assistant_dict(message):
     return data
 
 
+def _prune_old_screens(messages):
+    """Keep only the newest read_screen list so long tasks stay under Groq's per-minute token limit."""
+    screens = [m for m in messages if m.get("role") == "tool" and '"message": "Window:' in m.get("content", "")]
+    for old in screens[:-1]:
+        old["content"] = '{"ok": true, "message": "(older screen list removed)"}'
+
+
 def _call(messages, tool_choice):
+    _prune_old_screens(messages)
     return get_client().chat.completions.create(
         model=MODEL,
         messages=messages,
@@ -67,7 +79,7 @@ def _words(text):
     return " ".join(text.lower().replace(",", " ").replace(".", " ").replace("!", " ").split())
 
 
-def ask(text):
+def ask(text, should_stop=None):
     """Reply to text, allowing up to two rounds of approved tools, then a spoken summary."""
     # A waiting risky action is confirmed or cancelled here in code, never by the model,
     # so the model can't approve its own request.
@@ -91,6 +103,8 @@ def ask(text):
 
     try:
         for round_number in range(MAX_TOOL_ROUNDS + 1):
+            if should_stop and should_stop():
+                return _finish("Okay, stopping.")
             # The last round forbids tools so the model must speak the result.
             choice = "auto" if round_number < MAX_TOOL_ROUNDS else "none"
             message = _call(messages, choice)
@@ -113,7 +127,7 @@ def ask(text):
                 if result.get("needs_confirmation"):
                     # Speak the exact question; don't let the model rephrase or act on it.
                     return _finish(result["message"])
-                messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result)})
+                messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result)[:1800]})
     except Exception as error:
         name = type(error).__name__
         print("Brain error:", name)

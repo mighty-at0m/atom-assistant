@@ -233,6 +233,33 @@ TOOL_DEFINITIONS = [
 ]
 
 
+def _fn(name, description, properties=None, required=()):
+    return {"type": "function", "function": {
+        "name": name, "description": description,
+        "parameters": {"type": "object", "properties": properties or {}, "required": list(required),
+                       "additionalProperties": False}}}
+
+
+TOOL_DEFINITIONS += [
+    _fn("read_screen", "List the numbered buttons, links and boxes in the active window. Call this before clicking, and again after the screen changes."),
+    _fn("look_at_screen", "Look at a screenshot and answer a question about what is showing (slower; use when read_screen isn't enough).",
+        {"question": {"type": "string"}}),
+    _fn("click", "Click something on screen: its number from read_screen, its exact name, or a short description like 'the green play button'. Risky buttons ask the user first.",
+        {"target": {"type": "string"}, "double": {"type": "boolean"}, "right": {"type": "boolean"}}, ["target"]),
+    _fn("type_text", "Type text into the focused box. Set press_enter to submit.",
+        {"text": {"type": "string"}, "press_enter": {"type": "boolean"}}, ["text"]),
+    _fn("press_keys", "Press a key or shortcut, e.g. 'enter', 'esc', 'space', 'ctrl+l', 'ctrl+t', 'alt+tab', 'ctrl+f'.",
+        {"keys": {"type": "string"}}, ["keys"]),
+    _fn("scroll", "Scroll the active window.",
+        {"direction": {"type": "string", "enum": ["up", "down"]}, "amount": {"type": "integer"}}, ["direction"]),
+]
+
+
+def _screen(name):
+    import screen
+    return getattr(screen, name)
+
+
 def _user_path(path):
     """Resolve a path and refuse anything outside the user's own folders."""
     raw = os.path.expandvars(os.path.expanduser(path.strip()))
@@ -293,6 +320,39 @@ def _find_shortcut(name):
     return best
 
 
+_START_APPS = []
+
+
+def _start_apps():
+    """Every app in the Start menu, Microsoft Store apps included: [(name, AppID)]."""
+    if not _START_APPS:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", "Get-StartApps | ConvertTo-Json -Compress"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20,
+            creationflags=subprocess.CREATE_NO_WINDOW)
+        try:
+            data = json.loads(result.stdout or "[]")
+            data = data if isinstance(data, list) else [data]
+            _START_APPS.extend((item["Name"], item["AppID"]) for item in data if item.get("AppID"))
+        except (ValueError, KeyError):
+            pass
+    return _START_APPS
+
+
+def _find_start_app(name):
+    wanted = name.lower().replace(".exe", "").strip()
+    best = None
+    for title, app_id in _start_apps():
+        lowered = title.lower()
+        if "uninstall" in lowered:
+            continue
+        if lowered == wanted:
+            return "shell:AppsFolder\\" + app_id
+        if wanted in lowered and (best is None or len(title) < best[0]):
+            best = (len(title), "shell:AppsFolder\\" + app_id)
+    return best[1] if best else None
+
+
 def open_application(name):
     target = _match_app(name)
     if target in {"chrome", "msedge", "spotify:", "winword", "excel", "powerpnt"} or not target:
@@ -301,6 +361,11 @@ def open_application(name):
                                    "powerpnt": "powerpoint", "chrome": "google chrome"}.get(target, target or name))
         if shortcut:
             target = shortcut
+        else:
+            store_app = _find_start_app({"msedge": "microsoft edge", "spotify:": "spotify", "winword": "word",
+                                         "powerpnt": "powerpoint", "chrome": "google chrome"}.get(target, target or name))
+            if store_app:
+                target = store_app
     if not target:
         return {"ok": False, "message": f"I couldn't find an app called {name} on this PC."}
     try:
@@ -358,8 +423,11 @@ def play_music(query, app="youtube"):
     import urllib.parse
     import webbrowser
     if app == "spotify":
+        if "liked" in query.lower():
+            _start("spotify:collection:tracks")
+            return {"ok": True, "message": "Opened your Liked Songs in Spotify. Next, read_screen or click the green Play button."}
         _start("spotify:search:" + urllib.parse.quote(query))
-        return {"ok": True, "message": f"Opened {query} in Spotify. Spotify doesn't let me press play on a search, so pick a song, or ask me to play it on YouTube."}
+        return {"ok": True, "message": f"Opened the {query} search in Spotify. To play it, wait a moment, then click the top result's Play button."}
     try:
         video = _first_youtube_video(query + " official audio")
     except Exception:
@@ -560,15 +628,24 @@ def request_action(action, target=""):
             "message": f"Should I {label}? Say yes to confirm."}
 
 
+def hold_for_yes(label, run):
+    """Park any risky step until the user says yes."""
+    PENDING.clear()
+    PENDING.update({"label": label, "run": run, "at": time.time()})
+    return {"ok": True, "needs_confirmation": True, "message": f"Should I {label}? Say yes to confirm."}
+
+
 def confirm_pending():
     """Run the waiting action. Called by fastbrain only after the user says yes."""
     if not PENDING or time.time() - PENDING["at"] > CONFIRM_SECONDS:
         PENDING.clear()
         return None
-    action, target = PENDING["action"], PENDING["target"]
+    job = dict(PENDING)
     PENDING.clear()
-    print("Confirmed by voice:", action, target)
-    return RISKY_ACTIONS[action][1](target)
+    print("Confirmed by voice:", job["label"])
+    if "run" in job:
+        return job["run"]()
+    return RISKY_ACTIONS[job["action"]][1](job["target"])
 
 
 def cancel_pending():
@@ -588,6 +665,12 @@ def run_tool(name, arguments):
         "take_screenshot": take_screenshot,
         "open_website": lambda: open_website(arguments.get("site"), arguments.get("search")),
         "set_volume": lambda: set_volume(arguments["level"]),
+        "read_screen": lambda: _screen("read_screen")(),
+        "look_at_screen": lambda: _screen("look_at_screen")(arguments.get("question", "Describe what is on the screen.")),
+        "click": lambda: _screen("click")(arguments["target"], arguments.get("double", False), arguments.get("right", False)),
+        "type_text": lambda: _screen("type_text")(arguments["text"], arguments.get("press_enter", False)),
+        "press_keys": lambda: _screen("press_keys")(arguments["keys"]),
+        "scroll": lambda: _screen("scroll")(arguments["direction"], arguments.get("amount", 5)),
         "play_music": lambda: play_music(arguments["query"], arguments.get("app", "youtube")),
         "media_control": lambda: media_control(arguments["action"]),
         "request_action": lambda: request_action(arguments["action"], arguments.get("target", "")),
@@ -600,3 +683,5 @@ def run_tool(name, arguments):
         return handlers[name]()
     except (KeyError, TypeError, ValueError) as error:
         return {"ok": False, "message": f"Invalid tool request: {error}"}
+    except Exception as error:  # a broken tool must never crash ATOM
+        return {"ok": False, "message": f"{name} failed: {type(error).__name__}: {str(error)[:150]}"}

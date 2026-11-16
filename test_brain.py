@@ -14,6 +14,8 @@ questions = [
     "Search YouTube for lofi music",
     "Play a song by Dave",
     "Pause the music",
+    "Open notepad and type hello from ATOM",
+    "What buttons are on the screen?",
     "Close notepad",
     "no",
 ]

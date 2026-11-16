@@ -1,5 +1,6 @@
 # Local secrets and environment files
 groq_key.txt
+gemini_key.txt
 *.log
 New folder/
 
@@ -22,3 +23,4 @@ memory.json
 
 # Downloaded models (SpeechBrain fetches these on first run)
 models/
+gemini_key.txt

@@ -11,3 +11,6 @@ onnxruntime
 speechbrain
 torch
 torchaudio
+uiautomation
+pyautogui
+pycaw

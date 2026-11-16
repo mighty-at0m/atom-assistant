@@ -17,5 +17,5 @@ def get_client():
             key = KEY_FILE.read_text(encoding="utf-8").strip()
         if not key:
             raise RuntimeError("No Groq key. Set GROQ_API_KEY or put groq_key.txt beside atom.py.")
-        _client = Groq(api_key=key)
+        _client = Groq(api_key=key, max_retries=4)  # waits and retries on rate limits
     return _client

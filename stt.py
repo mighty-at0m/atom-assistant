@@ -8,8 +8,9 @@ import sounddevice as sd
 from groqclient import get_client
 
 RATE = 16000  # 16 kHz mono is what Whisper wants
-MAX_SECONDS = float(os.getenv("ATOM_MAX_SECONDS", "15"))
-SILENCE_SECONDS = float(os.getenv("ATOM_SILENCE_SECONDS", "0.8"))
+MAX_SECONDS = float(os.getenv("ATOM_MAX_SECONDS", "25"))
+# How long a pause ends your request. 1.3 s lets you stop to think mid-sentence.
+SILENCE_SECONDS = float(os.getenv("ATOM_SILENCE_SECONDS", "1.3"))
 MIN_SPEECH_RMS = 450
 # Live preview sends extra Whisper requests while you talk and uses up Groq's
 # free per-minute limit, so it is off unless ATOM_LIVE_PREVIEW=1.
@@ -27,7 +28,7 @@ def record(seconds=None):
 
 
 def record_until_silence(cancel_event=None, max_seconds=MAX_SECONDS, silence_seconds=SILENCE_SECONDS,
-                         on_status=None, on_partial=None, wait_for_speech_seconds=6):
+                         on_status=None, on_partial=None, wait_for_speech_seconds=6, on_level=None):
     """Record until speech ends. Return None if nothing is said, it is cancelled, or the mic fails.
 
     Always stops after max_seconds, so a noisy room can never keep ATOM listening forever.
@@ -39,7 +40,7 @@ def record_until_silence(cancel_event=None, max_seconds=MAX_SECONDS, silence_sec
     max_blocks = int(max_seconds * RATE / block)
     wait_blocks = int(wait_for_speech_seconds * RATE / block)
     required_silence = int(silence_seconds * RATE / block)
-    calibration_blocks = int(0.25 * RATE / block)
+    calibration_blocks = int(0.3 * RATE / block)
     speech_rms = MIN_SPEECH_RMS
     noise = []
     last_partial_at = 0
@@ -55,6 +56,8 @@ def record_until_silence(cancel_event=None, max_seconds=MAX_SECONDS, silence_sec
                 frame, _ = stream.read(block)
                 frames.append(frame.copy())
                 rms = float(np.sqrt(np.mean(frame.astype(np.float32) ** 2)))
+                if on_level:
+                    on_level(min(1.0, rms / 3000))
 
                 # Learn the room's noise level for the first quarter second.
                 if block_index <= calibration_blocks:
@@ -87,6 +90,39 @@ def record_until_silence(cancel_event=None, max_seconds=MAX_SECONDS, silence_sec
         return None
 
     return np.concatenate(frames, axis=0) if heard_speech else None
+
+
+def listen_for_barge_in(stop_event, on_level=None, speech_seconds=0.35):
+    """While ATOM is thinking, wait for the user to start talking again.
+
+    Returns the new speech (with the half second before it) once they finish, or None if
+    stop_event is set first. Used to add extra words to a command that is already running.
+    """
+    block = 512
+    needed = int(speech_seconds * RATE / block)
+    history = []
+    loud = 0
+    try:
+        with sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=block) as stream:
+            calibration = []
+            while not stop_event.is_set():
+                frame, _ = stream.read(block)
+                rms = float(np.sqrt(np.mean(frame.astype(np.float32) ** 2)))
+                history = (history + [frame.copy()])[-16:]
+                if len(calibration) < 8:
+                    calibration.append(rms)
+                    continue
+                threshold = max(MIN_SPEECH_RMS * 1.5, float(np.median(calibration)) * 4)
+                loud = loud + 1 if rms >= threshold else 0
+                if loud >= needed:
+                    break
+            else:
+                return None
+    except sd.PortAudioError:
+        return None
+    rest = record_until_silence(wait_for_speech_seconds=1, on_level=on_level)
+    head = np.concatenate(history, axis=0)
+    return head if rest is None else np.concatenate([head, rest], axis=0)
 
 
 def to_wav_bytes(audio):

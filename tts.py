@@ -16,6 +16,23 @@ def speak(text, rate=180):
         _engine = None
 
 
+def speak_async(text, rate=180):
+    """Speak on a background thread and return it, so the caller can listen for an interruption."""
+    def run():
+        try:
+            import comtypes
+            comtypes.CoInitialize()
+        except Exception:
+            pass
+        try:
+            speak(text, rate)
+        except Exception as error:
+            print("Speech error:", type(error).__name__)
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    return thread
+
+
 def stop_speaking():
     """Best-effort immediate cancellation from the ATOM window."""
     if _engine is not None:

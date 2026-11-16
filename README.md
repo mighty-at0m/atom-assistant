@@ -12,6 +12,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+1. For screen control, put a free Gemini key (aistudio.google.com) in `gemini_key.txt`.
 1. Put your Groq key in `groq_key.txt` beside `atom.py`, or set `GROQ_API_KEY`. Never commit it.
 2. Record your voice profile: `python enroll.py`
 3. Test the brain without the mic: `python test_brain.py`
@@ -24,10 +25,15 @@ pip install -r requirements.txt
 | `ATOM_WAKE_THRESHOLD` | 0.35 | Wake word sensitivity. Raise if it wakes by itself. |
 | `ATOM_VOICE_THRESHOLD` | 0.20 | Voice lock strictness. Raise if others can use it. |
 | `ATOM_DISABLE_VOICELOCK` | off | Set to 1 to skip the voice check while testing. |
-| `ATOM_MAX_SECONDS` | 15 | Longest single request. |
-| `ATOM_SILENCE_SECONDS` | 0.8 | Pause length that ends your request. |
+| `ATOM_MAX_SECONDS` | 25 | Longest single request. |
+| `ATOM_SILENCE_SECONDS` | 1.3 | Pause length that ends your request. |
+| `ATOM_DUCK_MODE` | duck | duck = turn other apps down while talking, pause = pause music, off. |
+| `ATOM_DUCK_LEVEL` | 0.15 | How low other apps go while ducked (0 to 1). |
 | `ATOM_LIVE_PREVIEW` | off | Set to 1 for live transcript text (uses extra Groq requests). |
 
 ## Tools
+
+Screen control: read_screen, click, type_text, press_keys, scroll, look_at_screen. Move the mouse hard into a screen corner to stop ATOM's mouse instantly.
+
 
 open_application (any installed app), open_website, open_folder, search_files, get_battery_status, get_current_time, read_clipboard, take_screenshot, set_volume, remember_preference, forget_preference. Files and folders are limited to your user folder. Shutdown, restart, sleep, closing apps and deleting files (to the Recycle Bin) ask first. Say yes within 60 seconds to confirm. Sending and installing aren't available.
