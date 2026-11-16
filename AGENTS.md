@@ -5,6 +5,7 @@ Windows desktop voice assistant at `C:\Users\USER\atom-assistant`. Use `\.venv\S
 ## Status
 
 - Working before the current, untested changes: “Hey Jarvis” wake detection, speaker verification, Groq transcription, the CustomTkinter UI, Groq fast chat/tool calling, and Windows SAPI speech.
+- 2026-11-16: default wake model now prefers the trained local `hey_at_tom.onnx` file in the project root, with the old Jarvis model only as a fallback; the app and test banner both say “hey atom”.
 - Wake threshold is `0.35` (code previously said 0.40 while this file said 0.30); override with `ATOM_WAKE_THRESHOLD`.
 - Voice lock default threshold is now `0.20` and can be tuned with `ATOM_VOICE_THRESHOLD`; observed valid scores in the 0.20–0.35 range were being rejected by the older `0.40` cutoff.
 - Temporary latency testing override: set `ATOM_DISABLE_VOICELOCK=1` to skip the voice check while measuring reply latency or debugging the mic pipeline.
@@ -17,6 +18,10 @@ Windows desktop voice assistant at `C:\Users\USER\atom-assistant`. Use `\.venv\S
 - Wake listening now recovers from a stopped PortAudio stream instead of terminating the wake loop.
 
 ## Changelog
+
+- 2026-11-14 v7: `ducker.py` (new, pycaw): while ATOM is in a conversation every other app's audio session is turned down to 15% (ATOM_DUCK_LEVEL), and restored afterwards; ATOM's own python process is never ducked. ATOM_DUCK_MODE=pause pauses media only if the peak meter shows audio; off disables. Called from app.run_turn. The wake word itself still has to be heard over full-volume music.
+
+- 2026-11-14 v6: `screen.py` (new): computer control. read_screen lists numbered clickable UI Automation elements of the active window; click by number/name, falling back to Gemini vision (`gemini-flash-lite-latest`, key in gemini_key.txt or GEMINI_API_KEY) for pointing; type_text, press_keys, scroll; risky clicks (send, buy, delete, post...) wait for a spoken yes via `tools.hold_for_yes`. `tools.py`: apps also found through Get-StartApps (Microsoft Store apps via shell:AppsFolder), Spotify Liked Songs via spotify:collection:tracks, a tool crash returns an error instead of crashing ATOM. `fastbrain.py`: up to 8 tool rounds, old screen lists pruned to save Groq tokens, Groq client retries rate limits. `app.py`: rewritten as an Iron Man HUD (animated arc-reactor canvas, captions, TALK/STOP/LOG, clock and battery), 3 follow-up turns, barge-in while thinking adds new words to the command, "Hey Jarvis" interrupts speech. `stt.py`: 1.3 s end-of-speech pause, 25 s cap, mic level callback, listen_for_barge_in. `wake.py`: PAUSE flag and wake_during. All logic stub-tested; untested on Windows.
 
 - 2026-11-14: v4 confirmed on the laptop: apps open (Spotify opened). v5: `play_music(query, app)` plays the first YouTube result automatically (scrapes videoId from the results page) or opens a search in the Spotify app (spotify:search URI; Spotify can't autoplay without Premium + Web API). `media_control` sends media keys (play/pause, next, previous).
 
@@ -57,6 +62,8 @@ Windows desktop voice assistant at `C:\Users\USER\atom-assistant`. Use `\.venv\S
 - [ ] Decide whether to adopt a true streaming voice provider for call-like response latency; Groq file transcription cannot start before end-of-speech.
 - [x] Add `.gitignore` (now also covers my_voice.npy, memory.json, models/).
 - [ ] Remove my_voice.npy and models/ from the public repo history (they were committed in 3765fe9).
+- [ ] Live test v6: HUD renders, read_screen in Spotify/Chrome, vision click, barge-in, Hey Jarvis interrupt.
+- [ ] Groq free tier is about 8K tokens/min; long screen tasks may hit it. Consider moving the brain to Gemini's OpenAI-compatible endpoint.
 - [ ] Live test: TTS was silent during the 2026-11-14 run; check the speaker volume and output device.
 - [ ] Run `python test_brain.py` and a live mic test on the hark-fixes code.
 - [ ] Build a custom “Hey Atom” wake model later; do not rename the existing Jarvis model and claim it detects Atom.

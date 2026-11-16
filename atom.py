@@ -46,28 +46,28 @@ def wake_loop():
         model = load_model()
         import voicelock
         voicelock.ENC = voicelock.load_encoder()
+        app.wake_model = model  # lets "hey atom" interrupt ATOM while it speaks
         print("Voice lock loaded")
-        print("Ready. Say 'Hey Jarvis'")
-        app.set_status("Say 'Hey Jarvis' or click the mic")
+        print("Ready. Say 'hey atom'")
+        app.set_status("Standing by")
         while True:
             score = wait_for_wake(model)
-            print(time.strftime("%H:%M:%S"), "Heard Hey Jarvis, score", round(float(score), 2))
+            print(time.strftime("%H:%M:%S"), "Heard hey atom, score", round(float(score), 2))
             if app.busy:
                 print("Busy, ignoring")
             else:
                 app.busy = True
-                app.after(0, lambda: app.mic.configure(fg_color="#c0392b"))
                 app.after(0, show_window)
                 beep()
                 print("Listening for your request...")
                 app.run_turn()
                 print("Turn finished")
-                app.set_status("Say 'Hey Jarvis' or click the mic")
+                app.set_status("Standing by")
             time.sleep(1.0)
             model.reset()
     except Exception:
         traceback.print_exc()
-        app.set_status("Wake word crashed - see console")
+        app.set_status("Error: wake word crashed")
 
 
 threading.Thread(target=wake_loop, daemon=True).start()
