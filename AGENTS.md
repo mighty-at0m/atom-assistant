@@ -8,6 +8,8 @@ Windows desktop voice assistant at `C:\Users\USER\atom-assistant`. Use `\.venv\S
 - 2026-11-22: removed the copied `atom-full-v13` source directory after confirming the desktop backup `atom-assistant-backup-2026-11-21_184644.zip`; the applied project remains in the workspace root.
 - 2026-11-23: installed Vosk 0.3.45 and downloaded the 40 MB Hey Atom model; live wake test detected Hey Atom while low normal-speech scores remained; private voice/model and wake-training assets excluded from Git.
 - 2026-11-23: installed edge-tts, pystray, obsws-python, Google API, and OAuth packages; set persistent `ATOM_VOICE=en-NG-AbeoNeural`; enabled Windows startup through `ATOM.lnk`; pip dependency check is clean.
+- 2026-11-23 setup validation: core imports pass, pip dependency check is clean, weather/news network tools pass, Nigerian Abeo TTS initializes, startup shortcut exists, and OBS reports server unavailable until its WebSocket server is enabled.
+- 2026-11-23 validation: passed core imports, dependency check, weather, news, and Nigerian TTS tests; identified Gmail, Telegram, and OBS account/server setup as manual steps.
 
 ## Changelog
 
@@ -82,3 +84,5 @@ Windows desktop voice assistant at `C:\Users\USER\atom-assistant`. Use `\.venv\S
 - 2026-11-22: removed the copied `atom-full-v13` source directory after confirming the desktop backup `atom-assistant-backup-2026-11-21_184644.zip`; the applied project remains in the workspace root.
 - 2026-11-23: installed Vosk 0.3.45 and downloaded the 40 MB Hey Atom model; live wake test detected Hey Atom while low normal-speech scores remained; private voice/model and wake-training assets excluded from Git.
 - 2026-11-23: installed edge-tts, pystray, obsws-python, Google API, and OAuth packages; set persistent `ATOM_VOICE=en-NG-AbeoNeural`; enabled Windows startup through `ATOM.lnk`; pip dependency check is clean.
+- 2026-11-23 setup validation: core imports pass, pip dependency check is clean, weather/news network tools pass, Nigerian Abeo TTS initializes, startup shortcut exists, and OBS reports server unavailable until its WebSocket server is enabled.
+- 2026-11-23 validation: passed core imports, dependency check, weather, news, and Nigerian TTS tests; identified Gmail, Telegram, and OBS account/server setup as manual steps.
