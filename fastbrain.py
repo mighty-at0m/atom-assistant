@@ -1,8 +1,9 @@
 """Fast conversational brain with a small, safe set of local PC tools."""
 
 import json
+import threading
 
-from groqclient import get_client
+import brains
 from memory import context as memory_context
 from tools import TOOL_DEFINITIONS, PENDING, cancel_pending, confirm_pending, run_tool
 
@@ -33,7 +34,19 @@ Don't narrate each step; after finishing, say in one short sentence what you did
 If an app fails to open, offer to open its website instead.
 Shutting down, restarting, sleep, closing apps and deleting files go through request_action, which asks
 the user to say yes; speak its question exactly and never claim it is done before then.
-Sending messages and installing software are not available yet; say ATOM can't do that yet."""
+Call the user "sir" now and then, like Jarvis. Installing software is not available yet.
+Messages: to send WhatsApp messages use reply_message; for email use check_email/read_email/reply_email/send_email.
+Sending always waits for the user's spoken yes: speak the tool's question exactly. Never say a message was sent
+until a tool result says so. When the user dictates a reply ("tell him I'll be there by 6"), write it naturally in
+the first person as the user ("I'll be there by 6pm") and call reply_message once.
+Reminders and timers: set_reminder. Weather: get_weather. News: get_news. Current facts: web_search.
+OBS: obs_control. Routines like 'start my day' or 'recording mode': run_routine.
+For creator help ("titles for this video", "explain this error on my screen"), use look_at_screen with a clear question,
+then answer from what it sees.
+ATOM's own screen has panels: chat, news, live (live TV news), music, inbox, reminders, markets, briefing. To open or
+close them ("open chat and music", "close everything", "show my desk", "put the news up") call show_panels ONCE with
+every panel in it, then reply in a few words, like "Opening chat and music, sir." Don't read the panel contents aloud
+unless asked. 'Show my desk' or 'my briefing' = briefing. 'Start my day' = run_routine (it opens the briefing itself)."""
 
 history = []
 
@@ -59,15 +72,7 @@ def _prune_old_screens(messages):
 
 def _call(messages, tool_choice):
     _prune_old_screens(messages)
-    return get_client().chat.completions.create(
-        model=MODEL,
-        messages=messages,
-        tools=TOOL_DEFINITIONS,
-        tool_choice=tool_choice,
-        parallel_tool_calls=False,
-        max_completion_tokens=400,
-        extra_body={"reasoning_effort": "low"},
-    ).choices[0].message
+    return brains.chat(messages, tools=TOOL_DEFINITIONS, tool_choice=tool_choice, max_tokens=400)
 
 
 def _finish(reply):
@@ -79,8 +84,16 @@ def _words(text):
     return " ".join(text.lower().replace(",", " ").replace(".", " ").replace("!", " ").split())
 
 
+_brain_lock = threading.Lock()  # voice and Telegram take turns, so the history stays in order
+
+
 def ask(text, should_stop=None):
-    """Reply to text, allowing up to two rounds of approved tools, then a spoken summary."""
+    with _brain_lock:
+        return _ask(text, should_stop)
+
+
+def _ask(text, should_stop=None):
+    """Reply to text, allowing tool rounds, then a spoken summary."""
     # A waiting risky action is confirmed or cancelled here in code, never by the model,
     # so the model can't approve its own request.
     if PENDING:
@@ -95,9 +108,20 @@ def ask(text, should_stop=None):
             return _finish("Okay, cancelled.")
         cancel_pending()  # anything else drops the waiting action
 
+    # Plain panel commands ("open chat and music", "close everything") skip the brain: instant.
+    import ui_bridge
+    command = ui_bridge.parse_command(text)
+    if command and hasattr(ui_bridge.get_ui(), "show_panels"):
+        history.append({"role": "user", "content": text})
+        result = ui_bridge.show_panels(*command)
+        return _finish(result["message"].replace(".", ", sir.", 1) if result["ok"] else result["message"])
+
     history.append({"role": "user", "content": text})
     del history[:-12]
-    system = SYSTEM + "\n\nSaved preferences:\n" + memory_context()
+    import notifications
+    from datetime import datetime
+    system = (SYSTEM + "\n\nNow: " + datetime.now().strftime("%A %d %B %Y, %I:%M %p")
+              + "\nSaved preferences:\n" + memory_context() + "\n" + notifications.context())
     messages = [{"role": "system", "content": system}] + history[:]
     last_result = None
 
@@ -131,10 +155,10 @@ def ask(text, should_stop=None):
     except Exception as error:
         name = type(error).__name__
         print("Brain error:", name)
-        if "RateLimit" in name:
-            return _finish("I'm being rate limited by Groq. Give me a minute and ask again.")
-        if "Connection" in name or "Timeout" in name:
-            return _finish("I can't reach the internet right now.")
+        if isinstance(error, brains.Offline) or "Connection" in name or "Timeout" in name:
+            return _finish("I can't reach the internet right now, sir. Basic commands still work offline.")
+        if isinstance(error, brains.AllBrainsDown):
+            return _finish("All my brains are busy or rate limited. Give me a minute.")
         return _finish("Something went wrong with my brain. Check the log.")
 
     return _finish(last_result["message"] if last_result else "Done.")

@@ -14,3 +14,11 @@ torchaudio
 uiautomation
 pyautogui
 pycaw
+vosk
+edge-tts
+pystray
+winsdk
+obsws-python
+google-api-python-client
+google-auth-oauthlib
+pywebview

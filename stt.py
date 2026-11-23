@@ -9,9 +9,10 @@ from groqclient import get_client
 
 RATE = 16000  # 16 kHz mono is what Whisper wants
 MAX_SECONDS = float(os.getenv("ATOM_MAX_SECONDS", "25"))
-# How long a pause ends your request. 1.3 s lets you stop to think mid-sentence.
-SILENCE_SECONDS = float(os.getenv("ATOM_SILENCE_SECONDS", "1.3"))
+# How long a pause ends your request. 1.8 s lets you stop to think mid-sentence.
+SILENCE_SECONDS = float(os.getenv("ATOM_SILENCE_SECONDS", "1.8"))
 MIN_SPEECH_RMS = 450
+MAX_SPEECH_RMS = 1500  # never demand louder than this, even if calibration caught your voice
 # Live preview sends extra Whisper requests while you talk and uses up Groq's
 # free per-minute limit, so it is off unless ATOM_LIVE_PREVIEW=1.
 LIVE_PREVIEW = os.getenv("ATOM_LIVE_PREVIEW", "").lower() in {"1", "true", "yes", "on"}
@@ -28,10 +29,13 @@ def record(seconds=None):
 
 
 def record_until_silence(cancel_event=None, max_seconds=MAX_SECONDS, silence_seconds=SILENCE_SECONDS,
-                         on_status=None, on_partial=None, wait_for_speech_seconds=6, on_level=None):
+                         on_status=None, on_partial=None, wait_for_speech_seconds=6, on_level=None,
+                         noise_rms=None, already_speaking=False):
     """Record until speech ends. Return None if nothing is said, it is cancelled, or the mic fails.
 
     Always stops after max_seconds, so a noisy room can never keep ATOM listening forever.
+    noise_rms: room noise measured earlier (skips calibration, so talking straight away is fine).
+    already_speaking: the user is mid-sentence (barge-in), so count it as speech from the start.
     """
     block = 512
     frames = []
@@ -40,9 +44,12 @@ def record_until_silence(cancel_event=None, max_seconds=MAX_SECONDS, silence_sec
     max_blocks = int(max_seconds * RATE / block)
     wait_blocks = int(wait_for_speech_seconds * RATE / block)
     required_silence = int(silence_seconds * RATE / block)
-    calibration_blocks = int(0.3 * RATE / block)
-    speech_rms = MIN_SPEECH_RMS
+    calibration_blocks = 0 if noise_rms is not None else int(0.3 * RATE / block)
+    floor = noise_rms if noise_rms is not None else 150.0
+    speech_rms = min(MAX_SPEECH_RMS, max(MIN_SPEECH_RMS, floor * 3))
+    heard_speech = bool(already_speaking)
     noise = []
+    recent = []
     last_partial_at = 0
     partial_every_blocks = max(1, int(2.0 * RATE / block))
     if on_status:
@@ -59,16 +66,26 @@ def record_until_silence(cancel_event=None, max_seconds=MAX_SECONDS, silence_sec
                 if on_level:
                     on_level(min(1.0, rms / 3000))
 
-                # Learn the room's noise level for the first quarter second.
+                # Learn the room's noise level for the first third of a second. The quietest
+                # part is used, so talking right after the wake word doesn't fool it.
                 if block_index <= calibration_blocks:
                     noise.append(rms)
                     if block_index == calibration_blocks:
-                        speech_rms = max(MIN_SPEECH_RMS, float(np.median(noise)) * 3)
+                        floor = float(np.percentile(noise, 20))
+                        speech_rms = min(MAX_SPEECH_RMS, max(MIN_SPEECH_RMS, floor * 3))
+                    if rms >= speech_rms * 1.5:
+                        heard_speech = True
                     continue
 
+                # Only real quiet counts as a pause; soft words and trailing syllables keep it open.
+                # The quiet level follows the last 3 seconds, so a steady fan or hum still ends it.
+                recent = (recent + [rms])[-int(3 * RATE / block):]
+                quiet_rms = max(250.0, min(speech_rms * 0.8, min(floor, float(np.percentile(recent, 10))) * 1.8 + 60))
                 if rms >= speech_rms:
                     heard_speech = True
                     silent_blocks = 0
+                elif rms > quiet_rms:
+                    silent_blocks = 0 if heard_speech else silent_blocks
                 elif heard_speech:
                     silent_blocks += 1
                     if silent_blocks >= required_silence:
@@ -120,7 +137,9 @@ def listen_for_barge_in(stop_event, on_level=None, speech_seconds=0.35):
                 return None
     except sd.PortAudioError:
         return None
-    rest = record_until_silence(wait_for_speech_seconds=1, on_level=on_level)
+    room = float(np.percentile(calibration, 20)) if calibration else None
+    rest = record_until_silence(wait_for_speech_seconds=3, on_level=on_level, noise_rms=room,
+                                already_speaking=True)
     head = np.concatenate(history, axis=0)
     return head if rest is None else np.concatenate([head, rest], axis=0)
 

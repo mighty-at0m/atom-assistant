@@ -21,6 +21,22 @@ Thumbs.db
 my_voice.npy
 memory.json
 
-# Downloaded models (SpeechBrain fetches these on first run)
+# Downloaded models and wake-training recordings
 models/
-gemini_key.txt
+wake_train/
+
+# v12 personal data and keys
+reminders.json
+contacts.json
+credentials.json
+token.json
+telegram_token.txt
+telegram_chat.txt
+obs_password.txt
+cerebras_key.txt
+openrouter_key.txt
+hey_at_tom.onnx
+hey_at_tom.tflite
+
+# v13 screen cache
+fx_history.json

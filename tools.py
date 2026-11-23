@@ -4,7 +4,6 @@ import ctypes
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import time
 from datetime import datetime
@@ -255,6 +254,58 @@ TOOL_DEFINITIONS += [
 ]
 
 
+TOOL_DEFINITIONS += [
+    _fn("get_weather", "Current weather and today/tomorrow forecast. City optional (defaults to the user's city).",
+        {"city": {"type": "string"}}),
+    _fn("get_news", "Latest headlines, optionally about a topic.", {"topic": {"type": "string"}, "count": {"type": "integer"}}),
+    _fn("web_search", "Search the web for current facts you don't know (scores, prices, recent events).",
+        {"query": {"type": "string"}}, ["query"]),
+    _fn("set_reminder", "Set a reminder or timer. Give minutes from now OR a clock time like '6pm' or 'tomorrow 9am'.",
+        {"text": {"type": "string"}, "minutes": {"type": "number"}, "at": {"type": "string"}}, ["text"]),
+    _fn("list_reminders", "List upcoming reminders."),
+    _fn("cancel_reminder", "Cancel a reminder by its number, words from it, or 'all'.", {"which": {"type": "string"}}, ["which"]),
+    _fn("reply_message", "Send a WhatsApp message (asks the user to say yes first). Use for 'tell him...', 'reply...', 'text Navis...'. "
+        "contact can be empty to reply to the latest message's sender. Write the message as the user would, first person.",
+        {"contact": {"type": "string"}, "text": {"type": "string"}}, ["text"]),
+    _fn("save_contact", "Save a WhatsApp contact's phone number.", {"name": {"type": "string"}, "phone": {"type": "string"}}, ["name", "phone"]),
+    _fn("read_missed_notifications", "Read out recent notifications (messages) the user may have missed.", {"count": {"type": "integer"}}),
+    _fn("check_email", "List the newest Gmail emails, numbered.", {"count": {"type": "integer"}, "unread_only": {"type": "boolean"}}),
+    _fn("read_email", "Read one email by its number from check_email.", {"number": {"type": "integer"}}, ["number"]),
+    _fn("reply_email", "Reply to an email by its number (asks the user to say yes first).",
+        {"number": {"type": "integer"}, "text": {"type": "string"}}, ["number", "text"]),
+    _fn("send_email", "Send a new email to a name or address (asks the user to say yes first).",
+        {"to": {"type": "string"}, "subject": {"type": "string"}, "body": {"type": "string"}}, ["to", "subject", "body"]),
+    _fn("obs_control", "Control OBS Studio: recording, scenes, streaming.",
+        {"action": {"type": "string", "enum": ["start_recording", "stop_recording", "pause_recording", "resume_recording",
+                                                "switch_scene", "start_streaming", "stop_streaming", "status"]},
+         "scene": {"type": "string"}}, ["action"]),
+    _fn("run_routine", "Run a saved routine such as 'start my day', 'recording mode', 'stop recording mode', 'goodnight'.",
+        {"name": {"type": "string"}}, ["name"]),
+    _fn("set_do_not_disturb", "Turn do not disturb on or off (notifications are saved instead of read out).",
+        {"on": {"type": "boolean"}}, ["on"]),
+]
+
+PANEL_NAMES = ["chat", "news", "live", "music", "inbox", "reminders", "markets", "briefing", "all"]
+TOOL_DEFINITIONS += [
+    _fn("show_panels", "Open and/or close panels on ATOM's screen, all in one call. Panels: chat (transcript), news "
+        "(headlines), live (live TV news video), music (now playing), inbox (messages), reminders (today), markets "
+        "(naira/dollar chart, BTC), briefing (news+markets+chat+today together, for 'show my desk'), all. "
+        "Example: 'open chat and music' -> open=['chat','music']; 'close everything' -> close=['all'].",
+        {"open": {"type": "array", "items": {"type": "string", "enum": PANEL_NAMES}},
+         "close": {"type": "array", "items": {"type": "string", "enum": PANEL_NAMES}}}),
+]
+
+
+def reply_message(text, contact=""):
+    import notifications
+    if not contact:
+        contact = notifications.LAST.get("sender", "")
+        if not contact:
+            return {"ok": False, "message": "Who should I send it to?"}
+    from whatsapp import send_whatsapp
+    return hold_for_yes(f"send to {contact} on WhatsApp: {text}", lambda: send_whatsapp(contact, text))
+
+
 def _screen(name):
     import screen
     return getattr(screen, name)
@@ -418,8 +469,12 @@ def _first_youtube_video(query):
     return found.group(1) if found else None
 
 
+MUSIC_STARTED = {"at": 0.0}  # when music was last started, so the conversation can step aside for it
+
+
 def play_music(query, app="youtube"):
     """Play a song or artist. YouTube starts playing by itself; Spotify opens the search in the app."""
+    MUSIC_STARTED["at"] = time.time()
     import urllib.parse
     import webbrowser
     if app == "spotify":
@@ -448,6 +503,8 @@ def media_control(action):
         return {"ok": False, "message": "I can play, pause, skip or go back."}
     ctypes.windll.user32.keybd_event(key, 0, 0, 0)
     ctypes.windll.user32.keybd_event(key, 0, 2, 0)
+    if action in ("play", "play_pause", "next", "previous"):
+        MUSIC_STARTED["at"] = time.time()
     return {"ok": True, "message": {"next": "Skipped.", "previous": "Went back."}.get(action, "Done.")}
 
 
@@ -525,6 +582,9 @@ def search_files(query, folder):
     return {"ok": True, "message": "\n".join(matches) if matches else "No matching files found."}
 
 
+LAST_SCREENSHOT = {"path": None}
+
+
 def take_screenshot():
     try:
         from PIL import ImageGrab
@@ -533,6 +593,7 @@ def take_screenshot():
     SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
     path = SCREENSHOT_DIR / datetime.now().strftime("screenshot_%Y%m%d_%H%M%S.png")
     ImageGrab.grab(all_screens=True).save(path)
+    LAST_SCREENSHOT["path"] = str(path)
     return {"ok": True, "message": f"Screenshot saved to Pictures, ATOM folder, as {path.name}."}
 
 
@@ -676,6 +737,23 @@ def run_tool(name, arguments):
         "request_action": lambda: request_action(arguments["action"], arguments.get("target", "")),
         "remember_preference": lambda: remember(arguments["key"], arguments["value"]),
         "forget_preference": lambda: forget(arguments["key"]),
+        "get_weather": lambda: __import__("webtools").get_weather(arguments.get("city")),
+        "get_news": lambda: __import__("webtools").get_news(arguments.get("topic"), arguments.get("count", 5)),
+        "web_search": lambda: __import__("webtools").web_search(arguments["query"]),
+        "set_reminder": lambda: __import__("reminders").set_reminder(arguments["text"], arguments.get("minutes"), arguments.get("at")),
+        "list_reminders": lambda: __import__("reminders").list_reminders(),
+        "cancel_reminder": lambda: __import__("reminders").cancel_reminder(arguments["which"]),
+        "reply_message": lambda: reply_message(arguments["text"], arguments.get("contact", "")),
+        "save_contact": lambda: __import__("whatsapp").save_contact(arguments["name"], arguments["phone"]),
+        "read_missed_notifications": lambda: __import__("notifications").read_missed(arguments.get("count", 5)),
+        "check_email": lambda: __import__("gmail_tools").check_email(arguments.get("count", 5), arguments.get("unread_only", True)),
+        "read_email": lambda: __import__("gmail_tools").read_email(arguments["number"]),
+        "reply_email": lambda: __import__("gmail_tools").reply_email(arguments["number"], arguments["text"]),
+        "send_email": lambda: __import__("gmail_tools").send_email(arguments["to"], arguments["subject"], arguments["body"]),
+        "obs_control": lambda: __import__("obs_tools").obs_control(arguments["action"], arguments.get("scene", "")),
+        "run_routine": lambda: __import__("routines").run_routine(arguments["name"]),
+        "set_do_not_disturb": lambda: __import__("routines").set_dnd(arguments["on"]),
+        "show_panels": lambda: __import__("ui_bridge").show_panels(arguments.get("open") or [], arguments.get("close") or []),
     }
     if name not in handlers:
         return {"ok": False, "message": f"Tool {name} is not available."}
@@ -683,5 +761,9 @@ def run_tool(name, arguments):
         return handlers[name]()
     except (KeyError, TypeError, ValueError) as error:
         return {"ok": False, "message": f"Invalid tool request: {error}"}
+    except ImportError as error:
+        return {"ok": False, "message": f"{name} needs a package that isn't installed: {error.name}. Run pip install -r requirements.txt."}
+    except RuntimeError as error:
+        return {"ok": False, "message": str(error)[:200]}
     except Exception as error:  # a broken tool must never crash ATOM
         return {"ok": False, "message": f"{name} failed: {type(error).__name__}: {str(error)[:150]}"}

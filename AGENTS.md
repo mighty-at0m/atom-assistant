@@ -4,20 +4,18 @@ Windows desktop voice assistant at `C:\Users\USER\atom-assistant`. Use `\.venv\S
 
 ## Status
 
-- Working before the current, untested changes: “Hey Jarvis” wake detection, speaker verification, Groq transcription, the CustomTkinter UI, Groq fast chat/tool calling, and Windows SAPI speech.
-- 2026-11-16: default wake model now prefers the trained local `hey_at_tom.onnx` file in the project root, with the old Jarvis model only as a fallback; the app and test banner both say “hey atom”.
-- Wake threshold is `0.35` (code previously said 0.40 while this file said 0.30); override with `ATOM_WAKE_THRESHOLD`.
-- Voice lock default threshold is now `0.20` and can be tuned with `ATOM_VOICE_THRESHOLD`; observed valid scores in the 0.20–0.35 range were being rejected by the older `0.40` cutoff.
-- Temporary latency testing override: set `ATOM_DISABLE_VOICELOCK=1` to skip the voice check while measuring reply latency or debugging the mic pipeline.
-- Capture ends after 0.8 s of silence, with a 15 s hard cap. Live preview is opt-in (`ATOM_LIVE_PREVIEW=1`) because it spends Groq requests.
-- Unverified in a real run: adaptive silence-based recording, GUI Cancel/Stop, one follow-up turn, memory context, and new safe tool handlers.
-- Groq credentials are now resolved from `GROQ_API_KEY` before the local key file; no secret values are placed in UI or logs.
-- Offline validation passed: all changed Python files parse, `tools.py` imports, and all eight tool schemas load. No live microphone, TTS, or Groq request was made.
-- Voice lock is strict on every activation. Speaker verification and transcription run concurrently after recording, so Atom does not wait for them one after another.
-- The concurrent strict-lock pipeline passed a syntax check but is untested on the real microphone and Groq connection.
-- Wake listening now recovers from a stopped PortAudio stream instead of terminating the wake loop.
+- 2026-11-21: applied `atom-full-v13` into the main project. A timestamped backup is on the Desktop. Core imports, all 37 tool schemas, package parity, and Python compilation passed; local secrets, `.venv`, voice profile, and wake/voice models were preserved.
+- 2026-11-22: removed the copied `atom-full-v13` source directory after confirming the desktop backup `atom-assistant-backup-2026-11-21_184644.zip`; the applied project remains in the workspace root.
+- 2026-11-23: installed Vosk 0.3.45 and downloaded the 40 MB Hey Atom model; live wake test detected Hey Atom while low normal-speech scores remained; private voice/model and wake-training assets excluded from Git.
 
 ## Changelog
+
+- 2026-11-22 cleanup: removed the copied `atom-full-v13` source directory; the timestamped desktop backup remains available.
+- 2026-11-21 v13 applied: copied the web UI, engine, brain chain, integrations, panels, feeds, and support modules from `atom-full-v13`; installed `pywebview` and `winsdk` in the project virtual environment.
+- 2026-11-19 v13 (Hark): new full-window web screen. `ui_web.py` (WebApp mixes in Engine, pywebview + Edge WebView2, loads `web/index.html`, `web/style.css`, `web/app.js`; one sender thread pushes JSON to `ATOM.recv`, mic level max 15/s; js_api for dock, talk/stop, media buttons, live video). Animated SVG atom (electrons orbit; standby slow, listening scales with the mic, thinking fast spin in amber, speaking pulses the nucleus); it slides to the bottom-right when panels are open. Panels: chat, news (+ Channels TV / Arise live video on click or "show live news"), music (Windows media session via winsdk), inbox, reminders/today, markets (USD/NGN 30-day chart, BTC, ETH, gold), briefing layout. `ui_bridge.py` holds the UI for tools; new tool `show_panels(open, close)`; plain panel commands ("open chat and music", "close everything", "show my desk") are parsed in code (fastbrain and offline) with no brain call. `hud_feeds.py`: cached free data (open.er-api.com, fawazahmed0 currency-api, CoinGecko, Open-Meteo, Google News RSS via `webtools.news_items`). "start my day" opens the briefing, "goodnight" closes panels (`routines.SCREEN`). `atom.py`: ATOM_UI=web|classic (default web), falls back to classic `app.AtomApp`; window calls go through show_window/hide_window/quit_app/close_to_tray, which both UIs have. engine.py unchanged. Sandbox: Playwright screenshots + stub/e2e tests pass; untested on Windows.
+- 2026-11-16 v12 (Hark): `engine.py` (new) holds the conversation engine (conversation mode, barge-in, offline fallback, announcements) separate from the window; `app.py` is now only the HUD and mixes in Engine. `brains.py`: brain chain Groq > Gemini > Cerebras > OpenRouter over plain HTTP, 60 s rest after a 429. `tts.py`: edge-tts neural voices (ATOM_VOICE, default en-GB-RyanNeural) played through Windows MCI, SAPI fallback. New tools: weather/news/web_search (`webtools.py`), reminders (`reminders.py`, reminders.json), WhatsApp send via WhatsApp Desktop (`whatsapp.py`, contacts.json), notification announcements (`notifications.py`, winsdk UserNotificationListener), Gmail (`gmail_tools.py`), OBS (`obs_tools.py`), routines + do-not-disturb (`routines.py`, routines.json), offline commands via Vosk (`offline.py`), Telegram inside ATOM (`telegram_bot.py`), autostart (`autostart.py`) and a tray icon. Every send (WhatsApp, email, going live) waits for a spoken yes. Stub-tested in the sandbox; untested on Windows. Setup in SETUP_V12.md.
+- 2026-11-16 v11 (Hark): conversation mode, with no wake word needed until 120 s of quiet (ATOM_IDLE_SECONDS).
+- 2026-11-16 v10 (Hark): Vosk Hey Atom wake word plus Jarvis backup; end-of-speech and barge-in no longer cut you off.
 
 - 2026-11-14 v7: `ducker.py` (new, pycaw): while ATOM is in a conversation every other app's audio session is turned down to 15% (ATOM_DUCK_LEVEL), and restored afterwards; ATOM's own python process is never ducked. ATOM_DUCK_MODE=pause pauses media only if the peak meter shows audio; off disables. Called from app.run_turn. The wake word itself still has to be heard over full-volume music.
 
@@ -52,6 +50,7 @@ Windows desktop voice assistant at `C:\Users\USER\atom-assistant`. Use `\.venv\S
 
 ## To do
 
+- [ ] Live test v13 on the laptop: window opens with no white flash, atom animates, "open chat and music", dock clicks, music panel (needs winsdk), live news video plays, close-to-tray and tray Show/Hide/Quit, CPU use while idle.
 - [x] Replace fixed five-second capture with adaptive capture (needs real-device test).
 - [x] Add visible Cancel/Stop control (needs real-device test).
 - [x] Complete safe handlers for clipboard, file search, and explicit remember/forget tools (needs real-world testing).
@@ -74,3 +73,9 @@ Windows desktop voice assistant at `C:\Users\USER\atom-assistant`. Use `\.venv\S
 - Risky actions go through `request_action` + `PENDING` and only run after a spoken yes matched in code. Sending messages and installing software stay unavailable.
 - Keep spoken replies short and plain: no markdown or emojis.
 - After every change, update this file’s Status, Changelog, and To do sections concisely.
+
+## Status
+
+- 2026-11-21: applied `atom-full-v13` into the main project. A timestamped backup is on the Desktop. Core imports, all 37 tool schemas, package parity, and Python compilation passed; local secrets, `.venv`, voice profile, and wake/voice models were preserved.
+- 2026-11-22: removed the copied `atom-full-v13` source directory after confirming the desktop backup `atom-assistant-backup-2026-11-21_184644.zip`; the applied project remains in the workspace root.
+- 2026-11-23: installed Vosk 0.3.45 and downloaded the 40 MB Hey Atom model; live wake test detected Hey Atom while low normal-speech scores remained; private voice/model and wake-training assets excluded from Git.

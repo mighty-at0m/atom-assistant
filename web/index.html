@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ATOM</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="idle">
+<div class="grid"></div>
+<div class="vig"></div>
+
+<header class="top">
+  <b class="brand">A.T.O.M</b>
+  <span id="net" class="net">ONLINE</span>
+  <div id="ticker" class="ticker"></div>
+  <span id="weather" class="meta"></span>
+  <span id="battery" class="meta"></span>
+  <b id="clock" class="clock"></b>
+</header>
+<div class="notch"></div>
+
+<main id="stage">
+
+  <section class="panel" data-panel="news">
+    <div class="ph"><span id="newsTitle">NEWS // HEADLINES</span>
+      <span class="ph-actions">
+        <button class="chip" id="channelBtn" title="Switch channel">CHANNELS TV</button>
+        <button class="chip live-chip" id="liveBtn" title="Live video">● LIVE</button>
+      </span></div>
+    <div class="pb news-body">
+      <div class="video" id="video">
+        <button class="play" id="playBtn" aria-label="Play live news">▶</button>
+        <div class="video-label" id="videoLabel">LIVE · CHANNELS TV</div>
+        <div class="breaking" id="breaking"><b>TOP STORY</b><span id="breakingText">Loading headlines…</span></div>
+      </div>
+      <div class="sub">HEADLINES <span id="newsCount"></span></div>
+      <ul class="list headlines" id="headlines"><li class="muted">Loading headlines…</li></ul>
+    </div>
+  </section>
+
+  <section class="panel" data-panel="markets">
+    <div class="ph"><span>USD/NGN // 30 DAYS</span><span id="fxNow">—</span></div>
+    <div class="pb markets-body">
+      <div class="chart" id="chart"><div class="muted">Loading rates…</div></div>
+      <div class="stats" id="stats"></div>
+    </div>
+  </section>
+
+  <section class="panel" data-panel="chat">
+    <div class="ph"><span id="chatTitle">ATOM // TRANSCRIPT</span><span id="chatTime"></span></div>
+    <div class="pb chat-body" id="chat"><div class="muted">Say "hey atom" to start.</div></div>
+  </section>
+
+  <section class="panel" data-panel="music">
+    <div class="ph"><span>MUSIC // NOW PLAYING</span><span id="musicApp"></span></div>
+    <div class="pb music-body">
+      <div class="eq" id="eq"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="track">
+        <div class="title" id="musicTitle">Nothing playing</div>
+        <div class="artist" id="musicArtist">Say "play some afrobeats"</div>
+      </div>
+      <div class="controls">
+        <button class="ctl" data-media="previous" aria-label="Previous">⏮</button>
+        <button class="ctl big" data-media="play_pause" id="playPause" aria-label="Play or pause">⏯</button>
+        <button class="ctl" data-media="next" aria-label="Next">⏭</button>
+      </div>
+      <div class="muted small" id="musicNote"></div>
+    </div>
+  </section>
+
+  <section class="panel" data-panel="inbox">
+    <div class="ph"><span>INBOX // NOTIFICATIONS</span><span id="inboxCount">0</span></div>
+    <div class="pb"><ul class="list inbox" id="inbox"><li class="muted">No new messages.</li></ul></div>
+  </section>
+
+  <section class="panel" data-panel="reminders">
+    <div class="ph"><span>TODAY</span><span id="remCount">0</span></div>
+    <div class="pb"><ul class="list today" id="today"><li class="muted">No reminders.</li></ul></div>
+  </section>
+
+</main>
+
+<div id="core" class="core" title="Tap to talk">
+  <svg id="atom" viewBox="-130 -130 260 260" aria-hidden="true">
+    <defs>
+      <radialGradient id="nuc">
+        <stop offset="0" stop-color="#ffffff"/>
+        <stop offset=".35" stop-color="#7ff3ff"/>
+        <stop offset="1" stop-color="#00b8d4" stop-opacity="0"/>
+      </radialGradient>
+      <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur id="glowBlur" stdDeviation="3" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+    <circle id="halo" r="114" fill="none" stroke-dasharray="2 6"/>
+    <g id="spin">
+      <g id="orbits" fill="none" stroke-width="2.4" filter="url(#glow)">
+        <ellipse rx="100" ry="36"/>
+        <ellipse rx="100" ry="36" transform="rotate(60)"/>
+        <ellipse rx="100" ry="36" transform="rotate(-60)"/>
+      </g>
+      <g id="electrons" fill="#e8fdff" filter="url(#glow)">
+        <circle r="6" cx="100" cy="0"/><circle r="6" cx="-50" cy="-86.6"/><circle r="6" cx="-50" cy="86.6"/>
+      </g>
+    </g>
+    <circle id="nucGlow" r="30" fill="url(#nuc)" filter="url(#glow)"/>
+    <circle id="nucCore" r="12" fill="#ffffff"/>
+  </svg>
+  <div class="label">ATOM</div>
+  <div class="status" id="status">STANDING BY</div>
+  <div class="hint" id="hint">say "hey atom"</div>
+  <button class="stop" id="stopBtn" title="Stop (Esc)">■ STOP</button>
+</div>
+
+<nav class="dock" id="dock">
+  <button data-dock="core" class="on">◉ core</button>
+  <button data-dock="chat">▤ chat</button>
+  <button data-dock="music">♪ music</button>
+  <button data-dock="news">▶ news</button>
+  <button data-dock="inbox">✉ inbox</button>
+  <button data-dock="reminders">⏰ reminders</button>
+</nav>
+
+<script src="app.js"></script>
+</body>
+</html>

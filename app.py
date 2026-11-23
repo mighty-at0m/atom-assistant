@@ -3,15 +3,11 @@
 import math
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 
 import customtkinter as ctk
 import tkinter as tk
 
-from stt import listen_for_barge_in, record_until_silence, to_wav_bytes, transcribe
-from fastbrain import ask
-from tts import speak_async, stop_speaking
-from voicelock import check
+from engine import Engine
 
 BG = "#04070c"
 PANEL = "#0a1420"
@@ -27,8 +23,6 @@ STATE_COLORS = {
     "error": "#ff3b3b",
 }
 STATE_SPEED = {"idle": 0.4, "listening": 1.2, "thinking": 4.5, "speaking": 1.8, "locked": 0.6, "error": 0.3}
-FOLLOW_UP_TURNS = 3  # after a reply, keep listening this many times without the wake word
-
 ctk.set_appearance_mode("dark")
 
 
@@ -44,7 +38,7 @@ def _mix(a, b, t):
     return "#%02x%02x%02x" % (int(ra + (rb - ra) * t), int(ga + (gb - ga) * t), int(ba + (bb - ba) * t))
 
 
-class AtomApp(ctk.CTk):
+class AtomApp(Engine, ctk.CTk):
     def __init__(self):
         super().__init__(fg_color=BG)
         self.title("ATOM")
@@ -207,6 +201,24 @@ class AtomApp(ctk.CTk):
             self.log.see("end")
         self.after(0, update)
 
+    # ---- Window control (the same names ui_web.WebApp has, so atom.py works with either) ----
+
+    def show_window(self):
+        self.deiconify()
+        self.lift()
+        self.attributes("-topmost", True)
+        self.after(500, lambda: self.attributes("-topmost", False))
+        self.focus_force()
+
+    def hide_window(self):
+        self.withdraw()
+
+    def quit_app(self):
+        self.destroy()
+
+    def close_to_tray(self):
+        self.protocol("WM_DELETE_WINDOW", self.withdraw)
+
     def toggle_log(self):
         if self.log_visible:
             self.log.pack_forget()
@@ -214,120 +226,6 @@ class AtomApp(ctk.CTk):
             self.log.pack(fill="both", expand=True, padx=20, pady=(0, 14))
         self.log_visible = not self.log_visible
 
-    # ---- Conversation --------------------------------------------------------
-
-    def start(self):
-        if self.busy:
-            return
-        self.busy = True
-        self.cancel_event.clear()
-        threading.Thread(target=self.run_turn, daemon=True).start()
-
-    def cancel_current(self):
-        self.cancel_event.set()
-        stop_speaking()
-        self.set_status("Stopped")
-
-    def _hear(self, audio):
-        """Voice-check and transcribe at the same time. Returns (ok, score, text)."""
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            voice = executor.submit(check, audio)
-            text = executor.submit(transcribe, to_wav_bytes(audio))
-            ok, score = voice.result()
-            return ok, score, text.result()
-
-    def _think(self, heard):
-        """Ask the brain, but if the user starts talking again, add their words and re-ask."""
-        while True:
-            self.set_status("Thinking...")
-            done = threading.Event()
-            extra = {}
-
-            def watch():
-                extra["audio"] = listen_for_barge_in(done, on_level=self.set_level)
-
-            watcher = threading.Thread(target=watch, daemon=True)
-            watcher.start()
-            started = time.time()
-            reply = ask(heard, should_stop=lambda: "audio" in extra and extra["audio"] is not None)
-            print("Brain took", round(time.time() - started, 1), "seconds")
-            done.set()
-            watcher.join(timeout=30)
-            audio = extra.get("audio")
-            if audio is None or self.cancel_event.is_set():
-                return reply
-            self.set_status("Listening... adding that")
-            ok, score, more = self._hear(audio)
-            if not ok or not more:
-                return reply
-            heard = heard + " " + more
-            self.add("You", heard)
-
-    def _say(self, reply):
-        """Speak; saying 'hey atom' or pressing Stop cuts it off. True if interrupted."""
-        self.set_status("Speaking...")
-        speaker = speak_async(reply)
-        if self.wake_model is not None:
-            finished = threading.Event()
-            threading.Thread(target=lambda: (speaker.join(), finished.set()), daemon=True).start()
-            from wake import wake_during
-            interrupted = wake_during(self.wake_model, finished)
-            if interrupted:
-                stop_speaking()
-                speaker.join(timeout=3)
-                return True
-        while speaker.is_alive():
-            if self.cancel_event.is_set():
-                stop_speaking()
-                return True
-            speaker.join(timeout=0.1)
-        return False
-
-    def run_turn(self):
-        from wake import PAUSE
-        import ducker
-        PAUSE.set()
-        ducker.duck()  # music down while we talk
-        try:
-            turn = 0
-            while turn <= FOLLOW_UP_TURNS and not self.cancel_event.is_set():
-                self.set_status("Listening for a follow-up..." if turn else "Listening...")
-                audio = record_until_silence(self.cancel_event, on_status=None, on_level=self.set_level,
-                                             wait_for_speech_seconds=5 if turn else 7)
-                if audio is None:
-                    break
-                self.set_status("Recognizing...")
-                ok, score, heard = self._hear(audio)
-                if not ok:
-                    if not turn:
-                        self.add("Locked", f"Voice not recognized ({score:.2f})")
-                        self.set_status("Locked")
-                        time.sleep(1.2)
-                    print("Voice lock score", round(score, 2))
-                    break
-                if not heard or heard.lower().strip(" .!?") in {"stop", "cancel", "never mind", "thank you", "thanks"}:
-                    break
-                self.add("You", heard)
-                reply = self._think(heard)
-                self.add("ATOM", reply)
-                if self.cancel_event.is_set():
-                    break
-                if self._say(reply):
-                    turn = 0  # interrupted with hey atom: start a fresh request
-                    continue
-                turn += 1
-        except Exception as error:
-            print("ATOM error:", type(error).__name__, str(error)[:200])
-            self.add("Error", "Something went wrong. Check your connection and try again.")
-            self.set_status("Error")
-            time.sleep(1.5)
-        finally:
-            ducker.restore()
-            PAUSE.clear()
-            if self.wake_model is not None:
-                self.wake_model.reset()
-            self.busy = False
-            self.set_status("Standing by")
 
 
 if __name__ == "__main__":
