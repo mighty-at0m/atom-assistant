@@ -22,3 +22,5 @@ obsws-python
 google-api-python-client
 google-auth-oauthlib
 pywebview
+watchdog==6.0.0
+psutil==7.0.0
