@@ -100,7 +100,11 @@ def _ask(text, should_stop=None):
         said = _words(text)
         if said in YES or said.startswith(("yes ", "yeah ", "go ahead", "do it")):
             history.append({"role": "user", "content": text})
-            result = confirm_pending()
+            try:
+                result = confirm_pending()
+            except Exception as error:
+                print("Confirmation failed:", type(error).__name__, str(error)[:120])
+                return _finish("Something went wrong doing that. Check the log.")
             return _finish(result["message"] if result else "That request expired. Ask me again.")
         if said in NO or said.startswith(("no ", "cancel", "don't")):
             cancel_pending()

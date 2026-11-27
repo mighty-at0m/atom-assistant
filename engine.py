@@ -45,13 +45,43 @@ class Engine:
         """Reminders, notifications and Telegram. Call once after the window exists."""
         self.cancel_event = getattr(self, "cancel_event", None) or threading.Event()
         self.announcements = queue.Queue()
-        import reminders
-        import notifications
-        import telegram_bot
-        reminders.watch(lambda text: self._queue("reminder", text))
-        notifications.watch(lambda note: self._queue("message", notifications.spoken(note), note))
-        telegram_bot.start()
+        # Each service starts on its own: one failing (say Telegram) must not stop the rest.
+        try:
+            import reminders
+            reminders.watch(lambda text: self._queue("reminder", text))
+        except Exception as error:
+            print("Reminders unavailable:", type(error).__name__, str(error)[:120])
+        try:
+            import notifications
+            notifications.watch(lambda note: self._queue("message", notifications.spoken(note), note))
+        except Exception as error:
+            print("Notifications unavailable:", type(error).__name__, str(error)[:120])
+        try:
+            import telegram_bot
+            telegram_bot.start()
+        except Exception as error:
+            print("Telegram unavailable:", type(error).__name__, str(error)[:120])
         threading.Thread(target=self._announcer, daemon=True).start()
+
+    def _release(self):
+        """End-of-turn cleanup. Every step is guarded on its own, so one failure (say the
+        wake model reset) can never leave ATOM busy or the wake word paused forever."""
+        import ducker
+        from wake import PAUSE
+        try:
+            ducker.restore()
+        except Exception as error:
+            print("Release: audio restore failed:", type(error).__name__)
+        try:
+            PAUSE.clear()
+        except Exception as error:
+            print("Release: wake unpause failed:", type(error).__name__)
+        if self.wake_model is not None:
+            try:
+                self.wake_model.reset()
+            except Exception as error:
+                print("Release: wake reset failed:", type(error).__name__)
+        self.busy = False
 
     def _queue(self, kind, text, note=None):
         import routines
@@ -210,10 +240,6 @@ class Engine:
             self.set_status("Error")
             time.sleep(1.5)
         finally:
-            ducker.restore()
-            PAUSE.clear()
-            if self.wake_model is not None:
-                self.wake_model.reset()
-            self.busy = False
+            self._release()
             self.set_status("Standing by")
 

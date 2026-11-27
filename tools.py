@@ -633,8 +633,11 @@ def _close_app(name):
            "excel": "EXCEL.EXE", "powerpnt": "POWERPNT.EXE", "spotify:": "Spotify.exe",
            "notepad": "notepad.exe", "calc": "CalculatorApp.exe", "mspaint": "mspaint.exe"}.get(target)
     exe = exe or (target if target.endswith(".exe") else target + ".exe")
-    result = subprocess.run(["taskkill", "/IM", exe, "/F"], capture_output=True, text=True,
-                            creationflags=subprocess.CREATE_NO_WINDOW)
+    try:
+        result = subprocess.run(["taskkill", "/IM", exe, "/F"], capture_output=True, text=True,
+                                creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "message": f"Closing {name} timed out."}
     if result.returncode != 0:
         return {"ok": False, "message": f"{name} doesn't seem to be running."}
     return {"ok": True, "message": f"Closed {name}."}
@@ -650,8 +653,12 @@ def _recycle(path):
               "{ [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($p, 'OnlyErrorDialogs', 'SendToRecycleBin') } "
               "else { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($p, 'OnlyErrorDialogs', 'SendToRecycleBin') }")
     env = dict(os.environ, ATOM_TARGET=str(file))
-    result = subprocess.run(["powershell", "-NoProfile", "-Command", script], env=env,
-                            capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+    try:
+        result = subprocess.run(["powershell", "-NoProfile", "-Command", script], env=env,
+                                capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+                                timeout=15)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "message": "Deleting that timed out."}
     if result.returncode != 0:
         return {"ok": False, "message": "I couldn't delete it."}
     return {"ok": True, "message": f"Moved {file.name} to the Recycle Bin."}

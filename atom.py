@@ -49,7 +49,10 @@ def beep():
     except Exception:
         pass
     # plays through the normal speakers too
-    winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS | winsound.SND_ASYNC)
+    try:
+        winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS | winsound.SND_ASYNC)
+    except Exception:
+        pass
 
 
 def show_window():
@@ -68,7 +71,14 @@ def wake_loop():
         app.start_services()  # reminders, notifications, Telegram
         print("Ready. Say 'hey atom'")
         app.set_status("Standing by")
-        while True:
+    except Exception:
+        traceback.print_exc()
+        app.set_status("Error: wake word crashed")
+        return
+    while True:
+        # One bad cycle (mic hiccup, a predict error, a turn that escapes) must not kill
+        # the loop: log it, show "Recovering...", and listen again.
+        try:
             score = wait_for_wake(model)
             print(time.strftime("%H:%M:%S"), "Heard hey atom, score", round(float(score), 2))
             if not app.claim():
@@ -83,9 +93,11 @@ def wake_loop():
                 app.set_status("Standing by")
             time.sleep(1.0)
             model.reset()
-    except Exception:
-        traceback.print_exc()
-        app.set_status("Error: wake word crashed")
+        except Exception:
+            traceback.print_exc()
+            print("Wake loop: recovering...")
+            app.set_status("Recovering...")
+            time.sleep(1.5)
 
 
 TRAY = {"icon": None}

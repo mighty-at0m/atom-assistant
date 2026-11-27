@@ -75,7 +75,11 @@ def _handle(chat_id, text):
         send("ATOM online. Text me like you talk to me: 'battery?', 'screenshot', 'open chrome', 'remind me at 6pm to call mum'.", chat_id)
         return
     before = tools.LAST_SCREENSHOT.get("path")
-    reply = ask(text)
+    try:
+        reply = ask(text)
+    except Exception as error:
+        print("Telegram ask failed:", type(error).__name__, str(error)[:120])
+        reply = "Something went wrong with that. ATOM is still running; try again."
     send(reply, chat_id)
     after = tools.LAST_SCREENSHOT.get("path")
     if after and after != before:
