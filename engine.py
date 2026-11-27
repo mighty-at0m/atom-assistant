@@ -61,6 +61,27 @@ class Engine:
             telegram_bot.start()
         except Exception as error:
             print("Telegram unavailable:", type(error).__name__, str(error)[:120])
+
+        # One-shot, non-fatal status for the account integrations, on its own thread so a
+        # slow check never delays startup: the log says in plain words what is connected
+        # and what still needs a one-time setup step.
+        def _report_integrations():
+            try:
+                import gmail_tools
+                print("Gmail:", gmail_tools.gmail_status()["message"])
+            except Exception as error:
+                print("Gmail status unavailable:", type(error).__name__, str(error)[:120])
+            try:
+                import telegram_bot
+                print("Telegram:", telegram_bot.bot_status()["message"])
+            except Exception as error:
+                print("Telegram status unavailable:", type(error).__name__, str(error)[:120])
+            try:
+                import obs_tools
+                print("OBS:", obs_tools.obs_status()["message"])
+            except Exception as error:
+                print("OBS status unavailable:", type(error).__name__, str(error)[:120])
+        threading.Thread(target=_report_integrations, daemon=True).start()
         threading.Thread(target=self._announcer, daemon=True).start()
 
     def _release(self):

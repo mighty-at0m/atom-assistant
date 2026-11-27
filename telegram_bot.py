@@ -1,7 +1,8 @@
 """Text ATOM from your phone on Telegram. Same brain, same tools, same 'yes' confirmations.
 
 Setup: put your bot token (from @BotFather) in telegram_token.txt. Start ATOM, send your bot /start,
-it replies with your chat id: put that number in telegram_chat.txt and restart ATOM.
+it replies with your chat id: put that number in telegram_chat.txt (no restart needed: ATOM re-reads
+telegram_chat.txt on every message, so just send another message afterwards).
 Only that chat is obeyed. Everyone else is ignored. Both files are git-ignored.
 If OpenClaw also uses this bot, stop OpenClaw or make a new bot: only one program can read a bot at a time.
 """
@@ -10,6 +11,7 @@ import json
 import os
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -30,6 +32,42 @@ def _api(method, params=None, timeout=40):
     data = urllib.parse.urlencode(params or {}).encode()
     with urllib.request.urlopen(url, data=data, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def bot_status():
+    """Plain token status: no token, invalid token, unverified (network), or ready.
+    Never raises, and never prints the token itself."""
+    if not _read(TOKEN_FILE):
+        STATUS["text"] = "off"
+        return {"ok": False, "state": "no token",
+                "message": "Telegram is off: telegram_token.txt is missing or empty. Put the token "
+                           "from @BotFather in telegram_token.txt beside atom.py."}
+    try:
+        result = _api("getMe", timeout=10)
+    except urllib.error.HTTPError as error:
+        if error.code in (401, 404):
+            STATUS["text"] = "invalid token"
+            return {"ok": False, "state": "invalid token",
+                    "message": "Telegram rejected the bot token. Get a fresh token from @BotFather "
+                               "and replace telegram_token.txt beside atom.py."}
+        STATUS["text"] = "unverified"
+        return {"ok": False, "state": "unverified",
+                "message": f"Telegram didn't answer the token check (HTTP {error.code}); ATOM will keep trying."}
+    except Exception as error:
+        STATUS["text"] = "unverified"
+        return {"ok": False, "state": "unverified",
+                "message": f"Couldn't check the Telegram token ({type(error).__name__}); ATOM will keep trying."}
+    if not result.get("ok"):
+        STATUS["text"] = "invalid token"
+        return {"ok": False, "state": "invalid token",
+                "message": "Telegram rejected the bot token. Get a fresh token from @BotFather "
+                           "and replace telegram_token.txt beside atom.py."}
+    bot = result.get("result", {})
+    name = f"@{bot['username']}" if bot.get("username") else "your bot"
+    STATUS["text"] = "connected" if _read(CHAT_FILE) else "needs chat id"
+    return {"ok": True, "state": STATUS["text"],
+            "message": f"Telegram token is valid ({name})." + ("" if _read(CHAT_FILE) else
+                       " Send the bot /start to get your chat id for telegram_chat.txt.")}
 
 
 def send(text, chat_id=None):
@@ -67,7 +105,7 @@ def _handle(chat_id, text):
     from fastbrain import ask
     allowed = _read(CHAT_FILE)
     if not allowed:
-        send(f"Your chat id is {chat_id}. Put it in telegram_chat.txt beside atom.py and restart ATOM.", chat_id)
+        send(f"Your chat id is {chat_id}. Put it in telegram_chat.txt beside atom.py, then send me another message (no restart needed).", chat_id)
         return
     if str(chat_id) != allowed:
         return  # strangers get nothing
@@ -92,19 +130,34 @@ def _handle(chat_id, text):
 def start():
     if not _read(TOKEN_FILE):
         STATUS["text"] = "off"
+        print(bot_status()["message"])
         return
 
     def loop():
         offset = 0
+        status = bot_status()
+        print("Telegram:", status["message"])
+        if status["state"] == "invalid token":
+            return  # polling with a rejected token would fail forever; the message above says the fix
         STATUS["text"] = "connected" if _read(CHAT_FILE) else "needs chat id"
         while True:
             try:
                 updates = _api("getUpdates", {"timeout": 30, "offset": offset})
                 for update in updates.get("result", []):
-                    offset = update["update_id"] + 1
-                    message = update.get("message") or {}
-                    if message.get("text"):
-                        threading.Thread(target=_handle, args=(message["chat"]["id"], message["text"]), daemon=True).start()
+                    # Advance the offset per update, inside its own try: one malformed or
+                    # failing update is logged and skipped, never re-fetched forever while
+                    # every later message waits behind it.
+                    try:
+                        offset = update["update_id"] + 1
+                    except Exception:
+                        print("Telegram: skipped a malformed update with no update_id.")
+                        continue
+                    try:
+                        message = update.get("message") or {}
+                        if message.get("text"):
+                            threading.Thread(target=_handle, args=(message["chat"]["id"], message["text"]), daemon=True).start()
+                    except Exception as error:
+                        print("Telegram: skipped update", update.get("update_id"), ":", type(error).__name__, str(error)[:100])
                 STATUS["text"] = "connected" if _read(CHAT_FILE) else "needs chat id"
             except Exception as error:
                 STATUS["text"] = "reconnecting"
