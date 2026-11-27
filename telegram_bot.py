@@ -94,6 +94,20 @@ def send_photo(path, caption="", chat_id=None):
     urllib.request.urlopen(request, timeout=30).read()
 
 
+def send_document(path, caption="", chat_id=None):
+    chat_id = chat_id or _read(CHAT_FILE)
+    boundary = uuid.uuid4().hex
+    parts = []
+    for name, value in (("chat_id", chat_id), ("caption", caption)):
+        parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n".encode())
+    parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"document\"; filename=\"{Path(path).name}\"\r\n"
+                 f"Content-Type: application/octet-stream\r\n\r\n".encode() + Path(path).read_bytes() + b"\r\n")
+    parts.append(f"--{boundary}--\r\n".encode())
+    request = urllib.request.Request(f"https://api.telegram.org/bot{_read(TOKEN_FILE)}/sendDocument", data=b"".join(parts),
+                                     headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    urllib.request.urlopen(request, timeout=30).read()
+
+
 def forward(kind, text):
     """Called for reminders and notifications; sends them to your phone depending on ATOM_TELEGRAM_FORWARD."""
     if FORWARD == "all" or (FORWARD == "reminders" and kind == "reminder"):
@@ -111,6 +125,16 @@ def _handle(chat_id, text):
         return  # strangers get nothing
     if text.strip().lower() in ("/start", "/help"):
         send("ATOM online. Text me like you talk to me: 'battery?', 'screenshot', 'open chrome', 'remind me at 6pm to call mum'.", chat_id)
+        return
+    lowered = text.strip().lower()
+    if lowered in ("pc status", "pc status?", "status of my pc", "how is my pc"):
+        import phonebridge
+        send(phonebridge.pc_status()["message"], chat_id)
+        return
+    if lowered.startswith(("http://", "https://")) and " " not in text.strip():
+        import phonebridge
+        saved = phonebridge.save_link(text)
+        send(f"Saved that link to saved_links.txt on the PC: {saved}" if saved else "I couldn't save that link.", chat_id)
         return
     before = tools.LAST_SCREENSHOT.get("path")
     try:
@@ -154,8 +178,19 @@ def start():
                         continue
                     try:
                         message = update.get("message") or {}
-                        if message.get("text"):
-                            threading.Thread(target=_handle, args=(message["chat"]["id"], message["text"]), daemon=True).start()
+                        chat_id = message["chat"]["id"]
+                        if not _read(CHAT_FILE) and (message.get("photo") or message.get("voice")):
+                            send(f"Your chat id is {chat_id}. Put it in telegram_chat.txt beside atom.py, then send me another message (no restart needed).", chat_id)
+                        elif str(chat_id) != _read(CHAT_FILE) and _read(CHAT_FILE):
+                            pass  # strangers get nothing, media included
+                        elif message.get("photo"):
+                            import phonebridge
+                            threading.Thread(target=phonebridge.handle_photo, args=(chat_id, message), daemon=True).start()
+                        elif message.get("voice"):
+                            import phonebridge
+                            threading.Thread(target=phonebridge.handle_voice, args=(chat_id, message), daemon=True).start()
+                        elif message.get("text"):
+                            threading.Thread(target=_handle, args=(chat_id, message["text"]), daemon=True).start()
                     except Exception as error:
                         print("Telegram: skipped update", update.get("update_id"), ":", type(error).__name__, str(error)[:100])
                 STATUS["text"] = "connected" if _read(CHAT_FILE) else "needs chat id"

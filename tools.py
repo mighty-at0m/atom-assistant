@@ -260,8 +260,10 @@ TOOL_DEFINITIONS += [
     _fn("get_news", "Latest headlines, optionally about a topic.", {"topic": {"type": "string"}, "count": {"type": "integer"}}),
     _fn("web_search", "Search the web for current facts you don't know (scores, prices, recent events).",
         {"query": {"type": "string"}}, ["query"]),
-    _fn("set_reminder", "Set a reminder or timer. Give minutes from now OR a clock time like '6pm' or 'tomorrow 9am'.",
-        {"text": {"type": "string"}, "minutes": {"type": "number"}, "at": {"type": "string"}}, ["text"]),
+    _fn("set_reminder", "Set a reminder or timer. Give minutes from now OR a clock time like '6pm' or 'tomorrow 9am'. "
+        "OR give app='VS Code' (or Chrome, OBS, Spotify...) for a reminder that fires when that app is opened.",
+        {"text": {"type": "string"}, "minutes": {"type": "number"}, "at": {"type": "string"},
+         "app": {"type": "string", "description": "App whose opening triggers the reminder, e.g. 'VS Code'."}}, ["text"]),
     _fn("list_reminders", "List upcoming reminders."),
     _fn("cancel_reminder", "Cancel a reminder by its number, words from it, or 'all'.", {"which": {"type": "string"}}, ["which"]),
     _fn("reply_message", "Send a WhatsApp message (asks the user to say yes first). Use for 'tell him...', 'reply...', 'text Navis...'. "
@@ -283,6 +285,39 @@ TOOL_DEFINITIONS += [
          "scene": {"type": "string"}}, ["action"]),
     _fn("run_routine", "Run a saved routine such as 'start my day', 'recording mode', 'stop recording mode', 'goodnight'.",
         {"name": {"type": "string"}}, ["name"]),
+    _fn("morning_brief", "Give the morning brief: greeting, time, weather, Gmail headlines, today's reminders, "
+        "and channel stats/markets when available. Use for 'good morning' or 'morning brief'."),
+    _fn("creator_mode", "Creator mode for ATOM LABS work: opens OBS, VS Code and YouTube, and switches OBS "
+        "to the named scene when one is given.", {"scene": {"type": "string"}}),
+    _fn("note_idea", "Save a video/content idea with a timestamp. Use when the user says 'note this: ...' "
+        "or asks to save an idea.", {"text": {"type": "string"}}, ["text"]),
+    _fn("read_ideas", "Read back the latest saved video ideas.", {"count": {"type": "integer"}}),
+    _fn("read_comments", "Read the latest comments on the newest ATOM LABS video aloud (YouTube Data API; "
+        "needs youtube_key.txt and youtube_channel.txt beside atom.py).", {"count": {"type": "integer"}}),
+    _fn("health_check", "Run ATOM's health check: Gmail, Telegram and OBS status, battery, internet and disk, "
+        "in one plain summary. Use for 'health check', 'are you okay', 'status report'."),
+    _fn("self_update", "Update ATOM itself: git pull the latest code from its GitHub checkout and report what "
+        "changed (a restart is needed afterwards). Use for 'update yourself'."),
+    _fn("send_to_phone", "Send a file to the user's phone on Telegram: the latest screenshot, or a named file "
+        "from their folders.", {"name": {"type": "string"}}),
+    _fn("pc_status", "Report PC status: battery, free disk, and whether the PC is locked. Use for 'PC status'."),
+    _fn("organiser", "The Downloads auto-organiser: start/stop sorting new downloads into category folders "
+        "(Images, Videos, Documents...), or report its status. It is off unless started.",
+        {"action": {"type": "string", "enum": ["start", "stop", "status"]}}, ["action"]),
+    _fn("cleanup_report", "Clean-up report: duplicate files, biggest files and wasted space in Downloads, "
+        "Desktop and Documents. Read-only, deletes nothing."),
+    _fn("set_weekly_cleanup", "Turn the weekly clean-up report on or off (announced once a week when on).",
+        {"on": {"type": "boolean"}}, ["on"]),
+    _fn("explain_screen_error", "Explain the error showing on the screen: screenshots it, reads it with vision "
+        "when a Gemini key is set, and speaks what it means and the likely fix. Use when the user asks about "
+        "an error on their screen."),
+    _fn("meeting_mode", "Meeting mode: start recording and transcribing the meeting in the background, or stop "
+        "and get a spoken summary with action points (also saved to meeting_notes).",
+        {"action": {"type": "string", "enum": ["start", "stop"]}}, ["action"]),
+    _fn("clipboard_history", "Clipboard history (off unless started): start/stop keeping the last 50 copied "
+        "texts on this PC, or recall one ('what did I copy earlier', 'paste that link from yesterday').",
+        {"action": {"type": "string", "enum": ["start", "stop", "recall"]},
+         "query": {"type": "string", "description": "Words identifying the entry to recall, e.g. 'github'."}}, ["action"]),
     _fn("set_do_not_disturb", "Turn do not disturb on or off (notifications are saved instead of read out).",
         {"on": {"type": "boolean"}}, ["on"]),
 ]
@@ -749,7 +784,7 @@ def run_tool(name, arguments):
         "get_weather": lambda: __import__("webtools").get_weather(arguments.get("city")),
         "get_news": lambda: __import__("webtools").get_news(arguments.get("topic"), arguments.get("count", 5)),
         "web_search": lambda: __import__("webtools").web_search(arguments["query"]),
-        "set_reminder": lambda: __import__("reminders").set_reminder(arguments["text"], arguments.get("minutes"), arguments.get("at")),
+        "set_reminder": lambda: __import__("reminders").set_reminder(arguments["text"], arguments.get("minutes"), arguments.get("at"), arguments.get("app")),
         "list_reminders": lambda: __import__("reminders").list_reminders(),
         "cancel_reminder": lambda: __import__("reminders").cancel_reminder(arguments["which"]),
         "reply_message": lambda: reply_message(arguments["text"], arguments.get("contact", "")),
@@ -763,6 +798,24 @@ def run_tool(name, arguments):
         "obs_status": lambda: __import__("obs_tools").obs_status(),
         "obs_control": lambda: __import__("obs_tools").obs_control(arguments["action"], arguments.get("scene", "")),
         "run_routine": lambda: __import__("routines").run_routine(arguments["name"]),
+        "morning_brief": lambda: __import__("brief").morning_brief(),
+        "creator_mode": lambda: __import__("creator").creator_mode(arguments.get("scene", "")),
+        "note_idea": lambda: __import__("creator").note_idea(arguments["text"]),
+        "read_ideas": lambda: __import__("creator").read_ideas(arguments.get("count", 5)),
+        "read_comments": lambda: __import__("creator").read_comments(arguments.get("count", 3)),
+        "health_check": lambda: __import__("health").health_check(),
+        "self_update": lambda: __import__("health").self_update(),
+        "send_to_phone": lambda: __import__("phonebridge").send_to_phone(arguments.get("name", "")),
+        "pc_status": lambda: __import__("phonebridge").pc_status(),
+        "organiser": lambda: {"start": lambda: __import__("organiser").start_organiser(),
+                              "stop": lambda: __import__("organiser").stop_organiser(),
+                              "status": lambda: __import__("organiser").organiser_status()}[arguments["action"]](),
+        "cleanup_report": lambda: __import__("cleanup").cleanup_report(),
+        "set_weekly_cleanup": lambda: __import__("cleanup").set_weekly_cleanup(arguments["on"]),
+        "explain_screen_error": lambda: __import__("screenhelp").explain_screen_error(),
+        "meeting_mode": lambda: (lambda m: m.start_meeting() if arguments["action"] == "start" else m.stop_meeting())(__import__("meeting")),
+        "clipboard_history": lambda: (lambda c: {"start": c.start_history, "stop": c.stop_history}.get(
+            arguments["action"], lambda: c.recall_clipboard(arguments.get("query", "")))())(__import__("clipbrain")),
         "set_do_not_disturb": lambda: __import__("routines").set_dnd(arguments["on"]),
         "show_panels": lambda: __import__("ui_bridge").show_panels(arguments.get("open") or [], arguments.get("close") or []),
     }

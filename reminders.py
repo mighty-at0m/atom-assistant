@@ -54,7 +54,58 @@ def _spoken(when):
     return when.strftime("%I:%M %p").lstrip("0") + " " + day
 
 
-def set_reminder(text, minutes=None, at=None):
+APP_PROCESSES = {
+    "vs code": "code.exe", "visual studio code": "code.exe", "code": "code.exe",
+    "chrome": "chrome.exe", "google chrome": "chrome.exe", "edge": "msedge.exe",
+    "microsoft edge": "msedge.exe", "obs": "obs64.exe", "obs studio": "obs64.exe",
+    "spotify": "spotify.exe", "notepad": "notepad.exe", "word": "winword.exe",
+    "excel": "excel.exe", "powerpoint": "powerpnt.exe", "whatsapp": "whatsapp.exe",
+    "terminal": "windowsterminal.exe", "file explorer": "explorer.exe", "explorer": "explorer.exe",
+}
+
+
+def _process_names():
+    """Running process image names (lowercase). psutil (in requirements.txt) first —
+    it doesn't depend on tasklist's localised output; tasklist is the fallback."""
+    try:
+        import psutil
+        return {proc.info["name"].lower() for proc in psutil.process_iter(["name"]) if proc.info.get("name")}
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    import csv
+    import io
+    import subprocess
+    try:
+        result = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True,
+                                timeout=10, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return {row[0].lower() for row in csv.reader(io.StringIO(result.stdout)) if row}
+    except Exception:
+        return set()
+
+
+def app_process(app):
+    """Spoken app name -> the exe to watch for."""
+    key = " ".join(str(app).lower().split())
+    if key in APP_PROCESSES:
+        return APP_PROCESSES[key]
+    cleaned = "".join(ch for ch in key if ch.isalnum() or ch in " ._-").strip()
+    return cleaned.replace(" ", "") + ".exe" if cleaned else ""
+
+
+def due_app_reminders(items, running):
+    """Reminders whose trigger app is running now. Pure, so it can be tested."""
+    return [item for item in items if item.get("app") and app_process(item["app"]) in running]
+
+
+def set_reminder(text, minutes=None, at=None, app=None):
+    if app:
+        with _lock:
+            items = _load()
+            items.append({"text": text.strip() or "your reminder", "due": 0, "app": str(app).strip()})
+            _save(items)
+        return {"ok": True, "message": f"Okay, I'll remind you to {text} when you open {app}."}
     if minutes:
         when = datetime.now() + timedelta(minutes=float(minutes))
     elif at:
@@ -71,11 +122,17 @@ def set_reminder(text, minutes=None, at=None):
     return {"ok": True, "message": f"Okay, I'll remind you to {text} at {_spoken(when)}."}
 
 
+def _describe(item):
+    if item.get("app"):
+        return f"{item['text']} when you open {item['app']}"
+    return f"{item['text']} at {_spoken(datetime.fromtimestamp(item['due']))}"
+
+
 def list_reminders():
     items = _load()
     if not items:
         return {"ok": True, "message": "You have no reminders."}
-    lines = [f"{i + 1}. {item['text']} at {_spoken(datetime.fromtimestamp(item['due']))}" for i, item in enumerate(items)]
+    lines = [f"{i + 1}. {_describe(item)}" for i, item in enumerate(items)]
     return {"ok": True, "message": "Reminders: " + "; ".join(lines)}
 
 
@@ -99,24 +156,44 @@ def cancel_reminder(which):
 
 
 def upcoming(limit=5):
-    """For the HUD: [(text, 'HH:MM AM today')]."""
-    return [(item["text"], _spoken(datetime.fromtimestamp(item["due"]))) for item in _load()[:limit]]
+    """For the HUD: [(text, 'HH:MM AM today')]. App-trigger reminders have no clock time."""
+    timed = [item for item in _load() if item.get("due")]
+    return [(item["text"], _spoken(datetime.fromtimestamp(item["due"]))) for item in timed[:limit]]
 
 
 def watch(announce):
+    checks = {"apps_at": 0.0}
+
     def loop():
         while True:
             try:
                 now = time.time()
                 with _lock:
                     items = _load()
-                    due = [item for item in items if item["due"] <= now]
+                    due = [item for item in items if item.get("due") and item["due"] <= now]
                     if due:
-                        _save([item for item in items if item["due"] > now])
+                        _save([item for item in items if item not in due])
                 for item in due:
                     late = now - item["due"]
                     prefix = "Sir, a reminder" if late < 600 else "Sir, you missed a reminder while I was off"
                     announce(f"{prefix}: {item['text']}.")
+                # App-trigger reminders: check what's running at most every 20 s, and fire
+                # (then remove) a reminder the first time its app shows up.
+                if now - checks["apps_at"] >= 20:
+                    checks["apps_at"] = now
+                    with _lock:
+                        items = _load()
+                    fired = due_app_reminders(items, _process_names())
+                    for item in fired:
+                        announce(f"Sir, a reminder for {item['app']}: {item['text']}.")
+                    if fired:
+                        with _lock:
+                            _save([item for item in _load() if item not in fired])
+                try:
+                    import cleanup
+                    cleanup.weekly_cleanup_if_enabled(announce)
+                except Exception:
+                    pass
             except Exception as error:
                 print("Reminder error:", type(error).__name__)
             time.sleep(5)

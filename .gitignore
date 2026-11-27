@@ -35,8 +35,21 @@ telegram_chat.txt
 obs_password.txt
 cerebras_key.txt
 openrouter_key.txt
+youtube_key.txt
+youtube_channel.txt
 hey_at_tom.onnx
 hey_at_tom.tflite
 
 # v13 screen cache
 fx_history.json
+
+# New-feature local data (personal, never publish)
+creator_ideas.json
+saved_links.txt
+telegram_downloads/
+clipboard_history.json
+cleanup_settings.json
+milestones.json
+channel_stats.json
+organiser_log.txt
+meeting_notes/
